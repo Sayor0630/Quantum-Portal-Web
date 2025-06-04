@@ -1,6 +1,6 @@
 'use client';
 import AdminLayout from '../../../../../components/admin/AdminLayout'; // Adjusted path
-import { Title, Paper, TextInput, Button, Group, LoadingOverlay, Alert, Space } from '@mantine/core';
+import { Title, Paper, TextInput, Button, Group, LoadingOverlay, Alert, Space, Text } from '@mantine/core';
 import { useForm, yupResolver } from '@mantine/form';
 import * as Yup from 'yup';
 import { useState, useEffect } from 'react'; // Added useEffect

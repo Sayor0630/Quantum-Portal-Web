@@ -1,7 +1,7 @@
 'use client';
 
 import AdminLayout from '../../../../components/admin/AdminLayout';
-import { Title, Text, Paper, Group, Button, LoadingOverlay, Alert, Select, Divider, Table, Image, Grid, Card, Badge, Space, ThemeIcon } from '@mantine/core';
+import { Title, Text, Paper, Group, Button, LoadingOverlay, Alert, Select, Divider, Table, Image, Grid, Card, Badge, Space, ThemeIcon, ScrollArea } from '@mantine/core';
 import { IconAlertCircle, IconDeviceFloppy, IconTruckDelivery, IconFileInvoice, IconUserCircle, IconMapPin, IconReceipt, IconEdit, IconArrowLeft } from '@tabler/icons-react'; // Added IconArrowLeft
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';

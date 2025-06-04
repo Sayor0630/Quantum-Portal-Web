@@ -93,7 +93,7 @@ export default function StaticPagesListPage() {
   const handleDeleteStaticPage = (pageId: string, pageTitle: string) => {
     modals.openConfirmModal({
         title: 'Delete Static Page', centered: true,
-        children: (<Text size="sm">Are you sure you want to delete the page "<strong>{pageTitle}</strong>"? This action is permanent.</Text>),
+        children: (<Text size="sm">Are you sure you want to delete the page &quot;<strong>{pageTitle}</strong>&quot;? This action is permanent.</Text>),
         labels: { confirm: 'Delete Page', cancel: 'Cancel' }, confirmProps: { color: 'red' },
         onConfirm: async () => {
             setDeletingPageId(pageId);
@@ -199,7 +199,7 @@ export default function StaticPagesListPage() {
          <ScrollArea>
              <LoadingOverlay visible={isLoading && authStatus === 'authenticated' && pages.length > 0} overlayProps={{ radius: 'sm', blur: 1 }} /> {/* Show overlay on content if loading more pages */}
              {!isLoading && !error && pages.length === 0 && (
-                 <Text p="xl" ta="center" c="dimmed">No static pages created yet. Click "Add New Page" to get started.</Text>
+                 <Text p="xl" ta="center" c="dimmed">No static pages created yet. Click &quot;Add New Page&quot; to get started.</Text>
              )}
              {!error && pages.length > 0 && (
                  <Table striped highlightOnHover verticalSpacing="sm" miw={700}>

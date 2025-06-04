@@ -1,7 +1,7 @@
 'use client';
 
 import AdminLayout from '../../../../../components/admin/AdminLayout';
-import { Title, Paper, TextInput, Button, Group, LoadingOverlay, Alert, Select, Switch, Textarea, MultiSelect, Space, JsonInput, Text } from '@mantine/core'; // Added Text
+import { Title, Paper, TextInput, Button, Group, LoadingOverlay, Alert, Select, Switch, Textarea, MultiSelect, Space, JsonInput, Text, Divider } from '@mantine/core'; // Added Text
 import { useForm, yupResolver } from '@mantine/form';
 import * as Yup from 'yup';
 import { useState, useEffect, useCallback } from 'react';

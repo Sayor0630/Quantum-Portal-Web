@@ -1,5 +1,5 @@
 // app/(store)/product/[productIdentifier]/page.tsx
-import { Title, Text, Container, Paper, Group, Button, Badge, SimpleGrid, Image as MantineImage, Accordion, Space, Divider, Box, Alert, Rating, NumberInput } from '@mantine/core'; // Removed Mantine Breadcrumbs, Anchor
+import { Title, Text, Container, Paper, Group, Button, Badge, SimpleGrid, Image as MantineImage, Accordion, Space, Divider, Box, Alert, Rating, NumberInput, Grid, Table } from '@mantine/core'; // Removed Mantine Breadcrumbs, Anchor
 import { IconShoppingCartPlus, IconStarFilled, IconAlertCircle } from '@tabler/icons-react'; // Removed IconHome
 // StoreLayout is applied by app/(store)/layout.tsx
 import { notFound } from 'next/navigation';

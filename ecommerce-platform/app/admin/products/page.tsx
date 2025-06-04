@@ -171,7 +171,7 @@ export default function ProductsPage() {
 
                 notifications.show({
                     title: 'Product Deleted',
-                    message: `Product "${productName}" has been successfully deleted.`,
+                    message: `Product &quot;${productName}&quot; has been successfully deleted.`,
                     color: 'green',
                     icon: <IconTrash size={16} />,
                 });

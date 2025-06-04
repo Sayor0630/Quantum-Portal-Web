@@ -230,7 +230,7 @@ export default function EditHomepageSectionPage() {
         case 'customHtml':
             return <Textarea label="Custom HTML Content" placeholder='<div>Your HTML here</div>' autosize minRows={8} {...form.getInputProps('content.htmlContent')} mb="sm" styles={{ input: { fontFamily: 'monospace' }}}/>;
         default:
-            return !isFetchingSection && <Text c="dimmed" fs="italic" mt="md">Section type "{selectedType}" might not require specific content fields beyond Name/Visibility, or it's loading.</Text>;
+            return !isFetchingSection && <Text c="dimmed" fs="italic" mt="md">Section type &quot;{selectedType}&quot; might not require specific content fields beyond Name/Visibility, or it&apos;s loading.</Text>;
     }
   };
 

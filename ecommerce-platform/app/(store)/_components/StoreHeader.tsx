@@ -1,10 +1,11 @@
 'use client'; // Client component for potential interactivity like theme toggle, mobile menu
 
-import { Header, Group, Title, ActionIcon, Burger, NavLink, Menu, UnstyledButton, Avatar, Text, Box, Container } from '@mantine/core';
+import { Header, Group, Title, ActionIcon, Burger, NavLink, Menu, UnstyledButton, Avatar, Text, Box, Container, Button } from '@mantine/core';
 import { useDisclosure, useHeadroom } from '@mantine/hooks';
 import { IconSun, IconMoonStars, IconShoppingCart, IconUserCircle, IconChevronDown } from '@tabler/icons-react';
 import { useMantineColorScheme } from '@mantine/core';
 import Link from 'next/link';
+import Image from 'next/image'; // Added for Next/Image
 import { useSession, signOut } from 'next-auth/react'; // For user session
 import React from 'react';
 
@@ -65,8 +66,8 @@ export default function StoreHeader({ siteConfig, navData }: StoreHeaderProps) {
       <Container size="xl" style={{ display: 'flex', alignItems: 'center', height: '100%' }}>
         <Group justify="space-between" style={{ flex: 1 }}>
           <Link href="/" passHref legacyBehavior>
-            <Group component="a" gap="xs" style={{textDecoration: 'none', color: 'inherit'}}>
-              {siteConfig?.logoUrl && <img src={siteConfig.logoUrl} alt={siteConfig.siteName || 'Logo'} style={{ height: '30px', width: 'auto' }} />}
+            <Group component="a" gap="xs" style={{textDecoration: 'none', color: 'inherit', alignItems: 'center'}}>
+              {siteConfig?.logoUrl && <Image src={siteConfig.logoUrl} alt={siteConfig.siteName || 'Logo'} width={100} height={30} style={{ objectFit: 'contain' }} />}
               <Title order={3} size="h4">{siteConfig?.siteName || 'My Store'}</Title>
             </Group>
           </Link>
@@ -135,15 +136,4 @@ export default function StoreHeader({ siteConfig, navData }: StoreHeaderProps) {
 // So, the mobile menu part might not work as intended without `useMediaQuery`. I'll remove the isSmallScreen check for now.
 // The mobile menu would typically be a Drawer.
 import { IconLogout, IconListDetails, IconLayoutDashboard } from '@tabler/icons-react'; // Ensure all icons used are imported
-import { useRouter } from 'next/navigation'; // Import if used programmatically
-```
-
-**Self-correction:**
-- The mobile menu part ` {opened && !isSmallScreen && (` needs `useMediaQuery` from Mantine hooks or similar to determine `isSmallScreen`. For now, I will simplify this or make it a basic dropdown. The provided code in the prompt doesn't fully flesh out the mobile navigation, so I will focus on the desktop header for now and a very simple mobile item list if `opened` is true.
-- `IconLogout`, `IconListDetails`, `IconLayoutDashboard` were re-imported at the bottom. This should be cleaned up.
-- `useRouter` was imported but not used. I will remove it if not added during refinement.
-- `ff="var(--mantine-font-family-headings)"` is an example of direct theme variable usage.
-
-Given the complexity, I'll simplify the mobile navigation to just a placeholder `Text` for this step, as a full Drawer implementation is out of scope for "basic structure". The focus is on data display and core elements. I will also remove the `useHeadroom` for now to simplify.The `StoreLayout.tsx` has been created. Now, I will create the `StoreHeader.tsx` component. This component will be a client component responsible for displaying the site logo/name, header navigation links, a theme toggle, and placeholders for cart/user icons.
-
-I will simplify the mobile navigation part for this subtask, focusing on the desktop layout of the header. I'll also remove `useHeadroom` for now to keep it focused.
+// import { useRouter } from 'next/navigation'; // Removed unused import
