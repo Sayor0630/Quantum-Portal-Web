@@ -6,11 +6,7 @@ import Category from '../../../../models/Category';
 import Product from '../../../../models/Product';
 import mongoose from 'mongoose';
 
-// Helper function to generate a slug (ensure this matches model's version if shared)
-const generateSlugFromName = (name: string) => {
-  if (!name) return '';
-  return name.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '').replace(/--+/g, '-').replace(/^-+/, '').replace(/-+$/, '');
-};
+// Removed local generateSlugFromName, model will handle it.
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const session = await getServerSession(req, res, authOptions);
@@ -40,16 +36,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           return res.status(400).json({ message: 'Category name is required' });
         }
 
-        // Slug generation/cleaning logic (model pre-save hook will also run)
-        if (!slug) {
-          slug = generateSlugFromName(name);
-        } else {
-          slug = generateSlugFromName(slug);
-        }
-        if (!slug) { // If name was empty and generated an empty slug
-            return res.status(400).json({ message: 'Slug could not be generated. Name is likely empty.' });
-        }
-
+        // Slug will be handled by the model's pre-save hook.
+        // Pass user-provided slug (can be undefined/empty) or rely on name-based generation in model.
+        // If name is empty and slug is also empty/not provided, model hook should result in undefined slug.
+        // The model's required:true for slug (if present) or name will catch truly empty essential fields.
+        // For now, assume model handles empty name + empty slug correctly based on its schema.
 
         if (parent === '') parent = null;
 
@@ -73,12 +64,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
         await newCategory.save();
 
-        if (parentCategoryId) {
-          await Category.updateOne(
-            { _id: parentCategoryId },
-            { $addToSet: { children: newCategory._id } }
-          );
-        }
+        // Parent-child relationship is now handled by the model's pre-save hook.
+        // if (parentCategoryId) {
+        //   await Category.updateOne(
+        //     { _id: parentCategoryId },
+        //     { $addToSet: { children: newCategory._id } }
+        //   );
+        // }
 
         return res.status(201).json(newCategory);
       } catch (error) {

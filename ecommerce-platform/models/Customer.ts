@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema, Model } from 'mongoose';
+import bcrypt from 'bcrypt';
 
 // Interface for address subdocument (can be expanded)
 export interface IAddress extends Document {
@@ -51,6 +52,28 @@ const CustomerSchema: Schema<ICustomer> = new Schema({
 //   }
 //   next();
 // });
+
+CustomerSchema.pre<ICustomer>('save', async function(next) {
+  // Only hash the password if it has been modified (or is new)
+  if (!this.isModified('password')) {
+    return next();
+  }
+  try {
+    // Generate a salt
+    const salt = await bcrypt.genSalt(10); // 10 rounds is generally recommended
+    // Hash the password using the salt
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error) {
+    // Pass error to next middleware if hashing fails
+    // Ensure 'error' is of type Error for 'next'
+    if (error instanceof Error) {
+        return next(error);
+    }
+    // If not an Error instance, wrap it or handle appropriately
+    return next(new Error('Password hashing failed'));
+  }
+});
 
 const CustomerModel: Model<ICustomer> = mongoose.models.Customer || mongoose.model<ICustomer>('Customer', CustomerSchema);
 

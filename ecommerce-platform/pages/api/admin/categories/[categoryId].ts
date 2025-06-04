@@ -6,12 +6,7 @@ import Category from '../../../../models/Category';
 import Product from '../../../../models/Product';
 import mongoose from 'mongoose';
 
-// Helper function to generate a slug (ensure this matches model's version if shared)
-const generateSlugFromName = (name: string) => {
-  if (!name) return '';
-  return name.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '').replace(/--+/g, '-').replace(/^-+/, '').replace(/-+$/, '');
-};
-
+// Removed local generateSlugFromName, model will handle it.
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const session = await getServerSession(req, res, authOptions);
@@ -57,25 +52,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Prepare an object for fields to update explicitly
         const updateFields: any = {};
 
-        if (name !== undefined) updateFields.name = name;
-        if (slug !== undefined) { // If slug is explicitly sent
-            updateFields.slug = generateSlugFromName(slug); // Clean it
-            if (updateFields.slug !== currentCategory.slug) { // Check uniqueness only if it changed
-                const existingBySlug = await Category.findOne({ slug: updateFields.slug, _id: { $ne: categoryObjectId } });
-                if (existingBySlug) return res.status(409).json({ message: `A category with slug "${updateFields.slug}" already exists.` });
-            }
-        } else if (name !== undefined && name !== currentCategory.name) {
-            // If name changed and slug not provided, model hook should regenerate.
-            // To ensure hook runs correctly for slug based on new name, we can unset slug if name changed.
-            // Or, explicitly set it here based on new name.
-             updateFields.slug = generateSlugFromName(name);
-             if (updateFields.slug !== currentCategory.slug) {
-                const existingBySlug = await Category.findOne({ slug: updateFields.slug, _id: { $ne: categoryObjectId } });
-                if (existingBySlug) return res.status(409).json({ message: `A category with slug "${updateFields.slug}" already exists from name change.` });
-            }
+        if (name !== undefined) {
+            updateFields.name = name;
+            // If name is changing, and slug is not explicitly provided,
+            // the model's pre-save hook will handle slug regeneration.
         }
 
-        if (isPublished !== undefined) { // Add isPublished to updateFields
+        // If slug is explicitly provided in the request body, pass it to updateFields.
+        // The model's pre-save hook will handle formatting and ensuring uniqueness.
+        if (slug !== undefined) {
+            updateFields.slug = slug;
+        }
+        // Explicit slug uniqueness check removed, model's unique index and pre-save hook will handle it.
+
+        if (isPublished !== undefined) {
           updateFields.isPublished = isPublished;
         }
 
@@ -117,15 +107,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
 
         // Manage parent-child relationships if parent changed
-        const finalParentIdString = updatedCategoryDoc.parent ? updatedCategoryDoc.parent.toString() : null;
-        if (oldParentIdString !== finalParentIdString) {
-            if (oldParentIdString) {
-                await Category.updateOne({ _id: new mongoose.Types.ObjectId(oldParentIdString) }, { $pull: { children: categoryObjectId } });
-            }
-            if (finalParentIdString) {
-                await Category.updateOne({ _id: new mongoose.Types.ObjectId(finalParentIdString) }, { $addToSet: { children: categoryObjectId } });
-            }
-        }
+        // This logic is now handled by the Category model's pre('save') hook.
+        // const finalParentIdString = updatedCategoryDoc.parent ? updatedCategoryDoc.parent.toString() : null;
+        // if (oldParentIdString !== finalParentIdString) {
+        //     if (oldParentIdString) {
+        //         await Category.updateOne({ _id: new mongoose.Types.ObjectId(oldParentIdString) }, { $pull: { children: categoryObjectId } });
+        //     }
+        //     if (finalParentIdString) {
+        //         await Category.updateOne({ _id: new mongoose.Types.ObjectId(finalParentIdString) }, { $addToSet: { children: categoryObjectId } });
+        //     }
+        // }
 
         return res.status(200).json(updatedCategoryDoc);
       } catch (error) {

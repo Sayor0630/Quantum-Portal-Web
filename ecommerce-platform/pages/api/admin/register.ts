@@ -12,7 +12,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     await connectToDatabase();
 
-    const { email, password, role } = req.body;
+    // Check if any admin users already exist
+    const adminCount = await AdminUser.countDocuments();
+    if (adminCount > 0) {
+      return res.status(403).json({ message: 'Forbidden: Admin registration is only allowed during initial setup.' });
+    }
+
+    const { email, password } = req.body; // Role from req.body will be ignored for initial superadmin
 
     if (!email || !password) {
       return res.status(400).json({ message: 'Email and password are required.' });
@@ -24,8 +30,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ message: 'Invalid email format.' });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters long.' });
+    if (password.length < 8) { // Changed from 6 to 8
+      return res.status(400).json({ message: 'Password must be at least 8 characters long.' });
     }
 
     const existingAdmin = await AdminUser.findOne({ email });
@@ -38,7 +44,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const newAdmin = new AdminUser({
       email,
       password: hashedPassword,
-      role: role || 'admin', // Default to 'admin' if role is not provided
+      role: 'superadmin', // Ensure first admin is superadmin
+      isActive: true // Ensure first admin is active
     });
 
     await newAdmin.save();
