@@ -96,7 +96,7 @@ export default function NavigationSettingsPage() {
    const handleDeleteMenu = (menuId: string, menuName: string) => {
      modals.openConfirmModal({
          title: 'Delete Navigation Menu', centered: true,
-         children: (<Text size="sm">Are you sure you want to delete the menu &quot;<strong>{menuName}</strong>&quot;? This will delete the menu and all its items. This action is permanent.</Text>),
+         children: (<Text size="sm">Are you sure you want to delete the menu "<strong>{menuName}</strong>"? This will delete the menu and all its items. This action is permanent.</Text>),
          labels: { confirm: 'Delete Menu', cancel: 'Cancel' }, confirmProps: { color: 'red' },
          onConfirm: async () => {
              setDeletingMenuId(menuId);
@@ -135,7 +135,7 @@ export default function NavigationSettingsPage() {
 
       <Paper withBorder shadow="sm" radius="md" p="md">
          <LoadingOverlay visible={isLoading && authStatus==='authenticated' && menus.length > 0} />
-         {!isLoading && !error && menus.length === 0 && <Text p="xl" ta="center" c="dimmed">No navigation menus defined yet. Click &quot;Create New Menu&quot; to get started.</Text>}
+         {!isLoading && !error && menus.length === 0 && <Text p="xl" ta="center" c="dimmed">No navigation menus defined yet. Click "Create New Menu" to get started.</Text>}
 
          {menus.length > 0 && (
              <Accordion variant="separated" defaultValue={menus[0]?._id} chevronPosition="left">
