@@ -1,10 +1,10 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../../../auth/[...nextauth]';
-import connectToDatabase from '../../../../../lib/dbConnect';
-import Order from '../../../../../models/Order';
-import Customer from '../../../../../models/Customer'; // For populating customer details
-import Product from '../../../../../models/Product'; // For populating product details in order items
+import { authOptions } from '../../auth/[...nextauth]';
+import connectToDatabase from '../../../../lib/dbConnect';
+import Order from '../../../../models/Order';
+import Customer from '../../../../models/Customer'; // For populating customer details
+import Product from '../../../../models/Product'; // For populating product details in order items
 import mongoose from 'mongoose';
 
 // Define allowed order statuses for validation

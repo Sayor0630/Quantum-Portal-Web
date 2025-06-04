@@ -1,8 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getServerSession } from 'next-auth/next'; // Using getServerSession
-import { authOptions } from '../auth/[...nextauth]'; // Path: ../auth/[...nextauth].ts
-import connectToDatabase from '../../../lib/dbConnect'; // Path: ../../../lib/dbConnect
-import SiteConfig, { ISiteConfig } from '../../../models/SiteConfig'; // Path: ../../../models/SiteConfig
+import { authOptions } from '../auth/[...nextauth]'; // Corrected path for authOptions relative to admin folder
+import connectToDatabase from '../../../../lib/dbConnect'; // Corrected path
+import SiteConfig, { ISiteConfig } from '../../../../models/SiteConfig'; // Corrected path
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const session = await getServerSession(req, res, authOptions);

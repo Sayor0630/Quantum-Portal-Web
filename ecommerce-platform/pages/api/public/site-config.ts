@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import connectToDatabase from '../../../lib/dbConnect';
-import SiteConfig from '../../../models/SiteConfig';
+import connectToDatabase from '../../../../lib/dbConnect';
+import SiteConfig from '../../../../models/SiteConfig';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {

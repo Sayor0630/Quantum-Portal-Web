@@ -1,8 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../../../auth/[...nextauth]'; // Path: ../../../auth/[...nextauth].ts
-import connectToDatabase from '../../../../../lib/dbConnect'; // Path: ../../../../../lib/dbConnect
-import NavigationMenu, { INavigationMenu } from '../../../../../models/NavigationMenu'; // Path: ../../../../../models/NavigationMenu
+import { authOptions } from '../../auth/[...nextauth]'; // Corrected path
+import connectToDatabase from '../../../../lib/dbConnect';
+import NavigationMenu, { INavigationMenu } from '../../../../models/NavigationMenu';
 import mongoose from 'mongoose';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {

@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import connectToDatabase from '../../../../../lib/dbConnect';
-import Product from '../../../../../models/Product';
-import Category from '../../../../../models/Category';
+import connectToDatabase from '../../../../lib/dbConnect';
+import Product from '../../../../models/Product';
+import Category from '../../../../models/Category';
 import mongoose from 'mongoose';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {

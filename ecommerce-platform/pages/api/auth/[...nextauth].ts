@@ -1,8 +1,8 @@
 import NextAuth, { AuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import AdminUser from '../../../../models/AdminUser'; // Adjust path if needed
+import AdminUser from '../../../models/AdminUser'; // Corrected path
 import bcrypt from 'bcrypt';
-import connectToDatabase from '../../../lib/dbConnect'; // Adjust path if needed
+import connectToDatabase from '../../../lib/dbConnect';
 import { NextApiRequest, NextApiResponse } from 'next';
 
 // Define a type for the user object that authorize and jwt callbacks expect

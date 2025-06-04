@@ -1,8 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../../auth/[...nextauth]'; // Path: ../../auth/[...nextauth].ts
-import connectToDatabase from '../../../../lib/dbConnect'; // Path: ../../../../lib/dbConnect
-import NavigationMenu, { INavigationMenu } from '../../../../models/NavigationMenu'; // Path: ../../../../models/NavigationMenu
+import { authOptions } from '../../auth/[...nextauth]'; // This path is correct: pages/api/admin/navigation -> pages/api/auth/
+import connectToDatabase from '../../../../lib/dbConnect';
+import NavigationMenu, { INavigationMenu } from '../../../../models/NavigationMenu';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const session = await getServerSession(req, res, authOptions);

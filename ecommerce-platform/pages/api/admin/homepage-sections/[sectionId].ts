@@ -1,8 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../../../auth/[...nextauth]';
-import connectToDatabase from '../../../../../lib/dbConnect';
-import HomepageSection from '../../../../../models/HomepageSection';
+import { authOptions } from '../../auth/[...nextauth]';
+import connectToDatabase from '../../../../lib/dbConnect';
+import HomepageSection from '../../../../models/HomepageSection';
 import mongoose from 'mongoose';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {

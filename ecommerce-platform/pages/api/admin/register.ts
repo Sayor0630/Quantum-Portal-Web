@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import AdminUser from '../../../models/AdminUser'; // Adjust path if needed
+import AdminUser from '../../../../models/AdminUser'; // Corrected path
 import bcrypt from 'bcrypt';
-import connectToDatabase from '../../lib/dbConnect'; // Adjust path if needed
+import connectToDatabase from '../../../../lib/dbConnect'; // Corrected path
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {

@@ -1,9 +1,9 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../../../auth/[...nextauth]';
-import connectToDatabase from '../../../../../lib/dbConnect';
-import AttributeDefinition from '../../../../../models/AttributeDefinition';
-import Product from '../../../../../models/Product'; // To update products on definition deletion
+import { authOptions } from '../../auth/[...nextauth]';
+import connectToDatabase from '../../../../lib/dbConnect';
+import AttributeDefinition from '../../../../models/AttributeDefinition';
+import Product from '../../../../models/Product'; // To update products on definition deletion
 import mongoose from 'mongoose';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {

@@ -1,8 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../../../auth/[...nextauth]';
-import connectToDatabase from '../../../../../lib/dbConnect';
-import AdminUser from '../../../../../models/AdminUser';
+import { authOptions } from '../../auth/[...nextauth]';
+import connectToDatabase from '../../../../lib/dbConnect';
+import AdminUser from '../../../../models/AdminUser';
 import mongoose from 'mongoose';
 
 const ALLOWED_ADMIN_ROLES = ['admin', 'contentManager', 'orderManager', 'superadmin'];

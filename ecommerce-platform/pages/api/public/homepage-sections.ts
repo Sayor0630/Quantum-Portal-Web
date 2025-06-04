@@ -1,8 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import connectToDatabase from '../../../lib/dbConnect';
-import HomepageSection from '../../../models/HomepageSection';
-import Product, { IProduct } from '../../../models/Product'; // Import IProduct
-import Category, { ICategory } from '../../../models/Category'; // Import ICategory
+import connectToDatabase from '../../../../lib/dbConnect';
+import HomepageSection from '../../../../models/HomepageSection';
+import Product, { IProduct } from '../../../../models/Product'; // Import IProduct
+import Category, { ICategory } from '../../../../models/Category'; // Import ICategory
 
 // Helper to sanitize content items based on type
 const sanitizeContentItems = async (items: any[]) => {

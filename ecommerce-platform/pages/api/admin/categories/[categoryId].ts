@@ -1,9 +1,9 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../../../auth/[...nextauth]';
-import connectToDatabase from '../../../../../lib/dbConnect';
-import Category from '../../../../../models/Category';
-import Product from '../../../../../models/Product';
+import { authOptions } from '../../auth/[...nextauth]';
+import connectToDatabase from '../../../../lib/dbConnect';
+import Category from '../../../../models/Category';
+import Product from '../../../../models/Product';
 import mongoose from 'mongoose';
 
 // Helper function to generate a slug (ensure this matches model's version if shared)
