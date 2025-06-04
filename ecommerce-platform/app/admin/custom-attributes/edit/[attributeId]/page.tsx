@@ -67,7 +67,7 @@ export default function EditCustomAttributePage() {
       };
       fetchAttribute();
     }
-  }, [attributeId, sessionStatus, form]);
+  }, [attributeId, sessionStatus, form.setValues]);
 
 
   const addValueField = () => setValueFields([...valueFields, '']);

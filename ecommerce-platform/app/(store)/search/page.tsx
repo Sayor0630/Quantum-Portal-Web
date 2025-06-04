@@ -1,5 +1,5 @@
 // app/(store)/search/page.tsx
-import { Title, Text, Container, SimpleGrid, Paper, Group, Pagination, Alert, Space, Button } from '@mantine/core'; // Removed TextInput as it's in client component
+import { Title, Text, Container, SimpleGrid, Paper, Group, Pagination, Alert, Space } from '@mantine/core'; // Removed TextInput as it's in client component
 import ProductCard from '../_components/ProductCard';
 // StoreLayout is applied by app/(store)/layout.tsx
 import { IconSearch, IconAlertCircle } from '@tabler/icons-react';
@@ -114,7 +114,7 @@ export default async function SearchResultsPage({ searchParams }: { searchParams
   return (
     <Container fluid px="lg" py="md" mt="var(--header-height, 70px)">
       <Title order={1} mb="xl">
-        {query ? `Search Results for "&quot;${query}&quot;"` : 'Search Our Products'}
+        {query ? `Search Results for "${query}"` : 'Search Our Products'}
       </Title>
 
       <Paper p="md" mb="xl" withBorder radius="sm" shadow="xs">
@@ -140,14 +140,14 @@ export default async function SearchResultsPage({ searchParams }: { searchParams
         <Paper p="xl" withBorder radius="sm" ta="center" mt="xl">
           <IconSearch size={52} stroke={1.5} style={{ opacity: 0.6 }} />
           <Title order={3} mt="md">No Products Found</Title>
-          <Text c="dimmed" mt="xs">No products matched your search term &quot;<strong>{query}</strong>&quot;.</Text>
+          <Text c="dimmed" mt="xs">No products matched your search term "<strong>{query}</strong>".</Text>
           <Text c="dimmed" size="sm">Try a different search term or check your spelling.</Text>
         </Paper>
       )}
 
       {!searchResults.error && searchResults.products.length > 0 && (
         <>
-          <Text mb="md" fw={500}>{searchResults.totalItems} product(s) found for &quot;{query}&quot; (Page {searchResults.currentPage} of {searchResults.totalPages})</Text>
+          <Text mb="md" fw={500}>{searchResults.totalItems} product(s) found for "{query}" (Page {searchResults.currentPage} of {searchResults.totalPages})</Text>
           <SimpleGrid cols={{ base: 1, xs:2, sm: 2, md: 3, lg: 4 }} spacing="lg">
             {searchResults.products.map(product => <ProductCard key={product._id} product={product} />)}
           </SimpleGrid>

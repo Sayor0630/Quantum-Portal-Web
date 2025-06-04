@@ -95,7 +95,7 @@ export default function CategoriesPage() {
         centered: true,
         children: (
             <Text size="sm">
-            Are you sure you want to delete the category &quot;<strong>{categoryName}</strong>&quot;?
+            Are you sure you want to delete the category "<strong>{categoryName}</strong>"?
             Products in this category will be uncategorized.
             This category cannot be deleted if it has child categories (they must be moved or deleted first).
             </Text>
@@ -112,7 +112,7 @@ export default function CategoriesPage() {
                 // Refetch categories to update the list and hierarchy correctly
                 fetchCategories();
 
-                notifications.show({ title: 'Category Deleted', message: data.message || `Category &quot;${categoryName}&quot; deleted.`, color: 'green' });
+                notifications.show({ title: 'Category Deleted', message: data.message || `Category "${categoryName}" deleted.`, color: 'green' });
             } catch (err: any) {
                 notifications.show({ title: 'Error Deleting Category', message: err.message, color: 'red' });
             } finally {

@@ -1,9 +1,9 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { SimpleGrid, Pagination, Group, Text, LoadingOverlay, Alert, Paper, Title, Space, Select, RangeSlider, Checkbox, Button, UnstyledButton, Collapse, Grid } from '@mantine/core';
+import { SimpleGrid, Pagination, Group, Text, LoadingOverlay, Alert, Paper, Title, Space, Select, RangeSlider, Checkbox, Button, UnstyledButton, Collapse } from '@mantine/core';
 import ProductCard from '../../../_components/ProductCard';
 import { useDebouncedValue, useDisclosure } from '@mantine/hooks';
-import { IconFilter, IconChevronDown, IconChevronUp, IconSortAscending, IconSortDescending, IconCalendarEvent, IconTag, IconCurrencyDollar, IconAlertCircle } from '@tabler/icons-react';
+import { IconFilter, IconChevronDown, IconChevronUp, IconSortAscending, IconSortDescending, IconCalendarEvent, IconTag, IconCurrencyDollar } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'; // For URL updates
 

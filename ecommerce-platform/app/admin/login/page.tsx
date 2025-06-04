@@ -131,7 +131,7 @@ export default function AdminLoginPage() {
         </form>
         <Group mt="md" justify="center">
           <Anchor component={Link} href="/admin/register" size="sm">
-             Don&apos;t have an account? Register
+             Don't have an account? Register
           </Anchor>
         </Group>
       </Paper>

@@ -160,7 +160,7 @@ export default function HomepageBuilderPage() {
          });
          const data = await response.json();
          if (!response.ok) throw new Error(data.message || 'Failed to update visibility.');
-         notifications.show({ title: 'Visibility Updated', message: `Section &quot;${data.name}&quot; visibility updated.`, color: 'blue', icon: isVisible ? <IconEye/> : <IconEyeOff/> });
+         notifications.show({ title: 'Visibility Updated', message: `Section "${data.name}" visibility updated.`, color: 'blue', icon: isVisible ? <IconEye/> : <IconEyeOff/> });
          setSections((currentSections) => // Update with response for consistency
              currentSections.map((s) => (s._id === sectionId ? data : s)).sort((a,b) => a.order - b.order)
          );
@@ -186,7 +186,7 @@ export default function HomepageBuilderPage() {
              // No need to update 'order' property here if it's only for display and save takes array index
              return arrayMove(items, oldIndex, newIndex);
          });
-         notifications.show({title: 'Order Changed', message: "Remember to save the new section order.", color: "orange"});
+         notifications.show({title: "Order Changed", message: "Remember to save the new section order.", color: "orange"});
      }
   }
 
@@ -217,7 +217,7 @@ export default function HomepageBuilderPage() {
   const handleDeleteSection = (sectionId: string, sectionName: string) => {
      modals.openConfirmModal({
          title: 'Delete Homepage Section', centered: true,
-         children: (<Text size="sm">Are you sure you want to delete the section &quot;<strong>{sectionName}</strong>&quot;? This action is permanent.</Text>),
+         children: (<Text size="sm">Are you sure you want to delete the section "<strong>{sectionName}</strong>"? This action is permanent.</Text>),
          labels: { confirm: 'Delete Section', cancel: 'Cancel' }, confirmProps: { color: 'red' },
          onConfirm: async () => {
              setDeletingSectionId(sectionId);
@@ -228,7 +228,7 @@ export default function HomepageBuilderPage() {
                       throw new Error(errorData.message || 'Failed to delete section.');
                  }
                  setSections(prev => prev.filter(s => s._id !== sectionId));
-                 notifications.show({ title: 'Section Deleted', message: `Section &quot;${sectionName}&quot; deleted.`, color: 'green', icon: <IconTrash /> });
+                 notifications.show({ title: 'Section Deleted', message: `Section "${sectionName}" deleted.`, color: 'green', icon: <IconTrash /> });
              } catch (err: any) {
                  notifications.show({ title: 'Error Deleting Section', message: err.message, color: 'red', icon: <IconAlertCircle /> });
              } finally {

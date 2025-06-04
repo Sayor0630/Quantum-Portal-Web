@@ -1,7 +1,7 @@
 'use client';
 
 import AdminLayout from '../../../components/admin/AdminLayout';
-import { Title, Text, Paper, Table, Group, Button, ActionIcon, LoadingOverlay, Alert, ScrollArea, Pagination, TextInput, Select, Badge, Menu, Rating, Textarea, Space, Grid } from '@mantine/core'; // Added Space
+import { Title, Text, Paper, Table, Group, Button, ActionIcon, LoadingOverlay, Alert, ScrollArea, Pagination, TextInput, Select, Badge, Menu, Rating, Textarea, Space } from '@mantine/core'; // Added Space
 import { IconAlertCircle, IconSearch, IconFilter, IconTrash, IconCheck, IconX, IconClockHour4, IconDotsVertical, IconMessageCircleQuestion, IconStar } from '@tabler/icons-react'; // Added IconStar
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
@@ -132,7 +132,7 @@ export default function ReviewsPage() {
   const handleDeleteReview = (reviewId: string, reviewCommentPreview: string) => {
      modals.openConfirmModal({
          title: 'Delete Review', centered: true,
-         children: (<Text size="sm">Are you sure you want to delete this review: &quot;<em>{reviewCommentPreview.substring(0,50)}...</em>&quot;? This action is permanent.</Text>),
+         children: (<Text size="sm">Are you sure you want to delete this review: "<em>{reviewCommentPreview.substring(0,50)}...</em>"? This action is permanent.</Text>),
          labels: { confirm: 'Delete Review', cancel: 'Cancel' }, confirmProps: { color: 'red' },
          onConfirm: async () => {
              setActionLoading(prev => ({ ...prev, [reviewId]: true }));
