@@ -61,7 +61,7 @@ export default function EditCategoryPage() {
 
   const currentCategoryName = form.values.name;
   useEffect(() => {
-    if (currentCategoryName && currentCategoryName !== originalName && !form.DIRTY_FIELDS.slug) {
+    if (currentCategoryName && currentCategoryName !== originalName && !form.isDirty('slug')) {
         // If name changed and slug wasn't manually touched, regenerate slug
         form.setFieldValue('slug', generateSlugForCategory(currentCategoryName));
     } else if (currentCategoryName && form.values.slug === '') { // If slug becomes empty, regenerate

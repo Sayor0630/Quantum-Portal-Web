@@ -1,6 +1,6 @@
 'use client';
 
-import { AppShell, Burger, Group, Title, ActionIcon, Text, Box, NavLink, Stack, ScrollArea } from '@mantine/core'; // Added Stack, ScrollArea
+import { AppShell, Burger, Group, Title, ActionIcon, Text, Box, NavLink, Stack, ScrollArea, useMantineColorScheme } from '@mantine/core'; // Added Stack, ScrollArea
 import { useDisclosure } from '@mantine/hooks';
 import {
     IconSun, IconMoonStars, IconDashboard, IconShoppingCart, IconListDetails, IconUsers,
@@ -38,6 +38,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const { data: session } = useSession();
   const userRole = (session?.user as any)?.role;
   const pathname = usePathname();
+  const currentPath = pathname || ''; // Fallback for null pathname
 
   const navLinksDefinition: NavItem[] = [
     { label: 'Dashboard', href: '/admin', icon: IconDashboard },
@@ -94,8 +95,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
         // A child is active if the current pathname starts with the child's href
         // A parent is active if any of its children are active OR if the pathname starts with the parent's own href (if it's a link itself)
-        const isChildActive = (child: NavItem) => child.href && pathname.startsWith(child.href);
-        const isParentActive = link.children?.some(isChildActive) || (link.href && pathname.startsWith(link.href)) || false;
+        const isChildActive = (child: NavItem) => child.href && currentPath.startsWith(child.href);
+        const isParentActive = link.children?.some(isChildActive) || (link.href && currentPath.startsWith(link.href)) || false;
 
 
         if (link.children) {
@@ -117,10 +118,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             <NavLink
                 key={link.label}
                 label={link.label}
-                href={link.href}
+                href={link.href || '#'} // Fallback for undefined href
                 component={Link}
                 leftSection={<link.icon size="1.1rem" stroke={1.5} />} // Adjusted size
-                active={pathname === link.href || (pathname.startsWith(link.href || '---') && link.href !== '/admin' && link.href !== undefined)}
+                active={currentPath === link.href || (currentPath.startsWith(link.href || '') && link.href !== '/admin' && link.href !== undefined)}
                 // More aggressive active state for direct links: active if path starts with href (unless it's just /admin)
                 // This helps highlight "Products" when on "/admin/products/edit/123"
             />

@@ -71,10 +71,11 @@ export default function EditStaticPage() {
   });
 
   const pageTitle = form.values.title;
-  const slugManuallyEdited = form.DIRTY_FIELDS.slug;
+  // const slugManuallyEdited = form.DIRTY_FIELDS.slug; // Replaced with form.isDirty('slug')
+  // const slugManuallyEdited = form.DIRTY_FIELDS.slug; // Replaced with form.isDirty('slug')
 
   useEffect(() => {
-    if (pageTitle && !slugManuallyEdited && form.values.slug === generateSlug(form.values.title_before_edit || '')) {
+    if (pageTitle && !form.isDirty('slug') && form.values.slug === generateSlug(form.values.title_before_edit || '')) {
         // If title changes, and slug was not manually edited AND it matches the slug of the (hypothetical) original title
         // This logic is complex. Simpler: only auto-update if slug is empty or user explicitly requests.
         // For now, let's rely on the pre-validate hook in the model or more direct user action for slug changes on edit.

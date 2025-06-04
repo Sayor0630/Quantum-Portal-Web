@@ -196,7 +196,7 @@ export default function SiteIdentitySettingsPage() {
         </Grid>
 
         <Group justify="flex-end" mt="xl">
-          <Button type="submit" leftSection={<IconDeviceFloppy size={16}/>} loading={isLoading} disabled={isFetching}>
+          <Button type="submit" leftSection={<IconDeviceFloppy size={16}/>} loading={isLoading} disabled={isFetching || isLoading || !form.isDirty()}>
              Save Settings
           </Button>
         </Group>

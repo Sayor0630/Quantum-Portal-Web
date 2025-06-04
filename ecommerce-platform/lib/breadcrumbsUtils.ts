@@ -23,19 +23,19 @@ const HomeBreadcrumb: BreadcrumbItem = { title: <IconHome size={16} />, href: '/
 export function generateCategoryBreadcrumbs(category?: BreadcrumbNestedCategory | null): BreadcrumbItem[] {
     const items: BreadcrumbItem[] = [HomeBreadcrumb];
 
-    const buildPath = (cat?: BreadcrumbNestedCategory | null) => {
+    const buildCatPathForCatPage = (cat?: BreadcrumbNestedCategory | null) => {
         if (!cat || cat.isPublished === false) return; // Stop if category is null or unpublished
 
         // Recursively add parent categories first
         if (cat.parent && typeof cat.parent === 'object') {
-            buildPath(cat.parent);
+            buildCatPathForCatPage(cat.parent);
         }
         // Add current category to breadcrumbs (will be a link unless it's the last one)
         items.push({ title: cat.name, href: `/category/${cat.slug}` });
     };
 
     if (category) {
-        buildPath(category);
+        buildCatPathForCatPage(category);
         // Make the last item (the current category itself) not a link
         if (items.length > 0 && items[items.length - 1].href === `/category/${category.slug}`) {
             const currentCategoryItem = items.pop();
@@ -52,10 +52,10 @@ export function generateCategoryBreadcrumbs(category?: BreadcrumbNestedCategory 
 export function generateProductBreadcrumbs(product?: BreadcrumbProductData | null): BreadcrumbItem[] {
     const items: BreadcrumbItem[] = [HomeBreadcrumb];
 
-    const buildCategoryPath = (cat?: BreadcrumbNestedCategory | null) => {
+    const buildCatPathForProdPage = (cat?: BreadcrumbNestedCategory | null) => {
         if (!cat || cat.isPublished === false) return;
         if (cat.parent && typeof cat.parent === 'object') {
-            buildPath(cat.parent);
+            buildCatPathForProdPage(cat.parent); // Corrected recursive call
         }
         items.push({ title: cat.name, href: `/category/${cat.slug}` });
     };
@@ -63,7 +63,7 @@ export function generateProductBreadcrumbs(product?: BreadcrumbProductData | nul
     if (product?.category) {
         // Check if the direct category is published before attempting to build its path
         if (product.category.isPublished !== false) { // Assume true if undefined, or be strict: product.category.isPublished === true
-             buildCategoryPath(product.category);
+             buildCatPathForProdPage(product.category);
         } else {
             // If main category is unpublished, perhaps only show "Home / Product Name"
             // Or "Home / Uncategorized / Product Name" - for now, just stops path here

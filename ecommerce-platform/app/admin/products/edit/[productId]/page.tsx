@@ -110,7 +110,7 @@ export default function EditProductPage() {
   const currentSlug = form.values.slug;
 
   useEffect(() => {
-    if (currentName && !form.DIRTY_FIELDS.slug) { // If name changes and slug hasn't been manually touched
+    if (currentName && !form.isDirty('slug')) { // If name changes and slug hasn't been manually touched
         if (generateSlugFromName(originalProductName) === currentSlug || currentSlug === '') {
             // If current slug was the auto-slug of original name, or if slug is now empty, regenerate
             form.setFieldValue('slug', generateSlugFromName(currentName));
