@@ -1,6 +1,6 @@
 'use client';
 import AdminLayout from '../../../../../../components/admin/AdminLayout';
-import { Title, Text, Paper, Button, Group, LoadingOverlay, Alert, Modal, TextInput, ActionIcon, Menu, Divider, Box, Tooltip as MantineTooltip, Space } from '@mantine/core';
+import { Title, Text, Paper, Button, Group, LoadingOverlay, Alert, Modal, TextInput, ActionIcon, Menu, Divider, Box, Tooltip as MantineTooltip, Space, Skeleton } from '@mantine/core';
 import { useDisclosure, useListState } from '@mantine/hooks';
 import { useForm, yupResolver } from '@mantine/form';
 import * as Yup from 'yup';
@@ -265,7 +265,7 @@ export default function EditMenuPage() {
   const handleDeleteItem = (itemToDelete: MenuItem) => {
     confirmModals.openConfirmModal({
       title: 'Delete Menu Item', centered: true,
-      children: <Text size="sm">Delete "<strong>{itemToDelete.title}</strong>"? If it has sub-items, they will also be deleted.</Text>,
+      children: <Text size="sm">Delete &quot;<strong>{itemToDelete.title}</strong>&quot;? If it has sub-items, they will also be deleted.</Text>,
       labels: { confirm: 'Delete Item', cancel: 'Cancel' }, confirmProps: { color: 'red' },
       onConfirm: () => setItems(prevItems => removeItemFromTree(prevItems, itemToDelete.clientId).newItems),
     });
@@ -362,7 +362,7 @@ export default function EditMenuPage() {
         }
         return assignOrderRecursively(newTree);
     });
-    notifications.show({title: "Structure Changed", message: "Remember to save your changes.", color: "orange", autoClose: 3000});
+    notifications.show({title: 'Structure Changed', message: "Remember to save your changes.", color: "orange", autoClose: 3000});
   }
 
   const allClientIds = useCallback(() => { // Memoize to prevent re-renders of SortableContext

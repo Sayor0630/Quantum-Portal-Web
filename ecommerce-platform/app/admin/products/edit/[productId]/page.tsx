@@ -139,7 +139,7 @@ export default function EditProductPage() {
         };
         fetchMetaData();
       }
-  }, [authStatus]);
+  }, [authStatus, router]); // Added router
 
   useEffect(() => {
     if (productId && authStatus === 'authenticated') {
@@ -175,7 +175,7 @@ export default function EditProductPage() {
         fetchProductData();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productId, authStatus]);
+  }, [productId, authStatus, form]); // Added form
 
   const handleFileSelectAndUpload = async (files: File[]) => { /* ... (image upload logic remains same) ... */
     if (!files || files.length === 0) return;

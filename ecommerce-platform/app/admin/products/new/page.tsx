@@ -125,7 +125,7 @@ export default function NewProductPage() {
         };
         fetchMetaData();
       }
-  }, [authStatus]);
+  }, [authStatus, router]); // Added router
 
   const handleFileSelectAndUpload = async (files: File[]) => {
     // ... (image upload logic remains the same)
@@ -251,7 +251,7 @@ export default function NewProductPage() {
 
         <Title order={4} mt="lg" mb="sm">Custom Attributes</Title>
         {isMetaLoading && <Text c="dimmed" size="sm">Loading attribute options...</Text>}
-        {!isMetaLoading && attributeDefinitions.length === 0 && <Text c="dimmed" size="sm">No custom attributes defined. Define them in 'Custom Attributes' section.</Text>}
+        {!isMetaLoading && attributeDefinitions.length === 0 && <Text c="dimmed" size="sm">No custom attributes defined. Define them in &apos;Custom Attributes&apos; section.</Text>}
         <Grid mb="md">
             {attributeDefinitions.map((attrDef) => (
                 <Grid.Col span={{ base: 12, md: 6 }} key={attrDef._id}>

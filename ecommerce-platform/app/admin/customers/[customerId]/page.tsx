@@ -224,7 +224,7 @@ export default function CustomerDetailsPage() {
              </Card>
              <Paper withBorder shadow="sm" p="md" radius="md">
                  <Title order={4} mb="sm">Order History (Placeholder)</Title>
-                 <Text c="dimmed">Customer's order history summary will be displayed here.</Text>
+                 <Text c="dimmed">Customer&apos;s order history summary will be displayed here.</Text>
                  {/* <Button variant="outline" size="xs" mt="sm" component={Link} href={`/admin/orders?customerId=${customer._id}`}>View All Orders</Button> */}
              </Paper>
          </Grid.Col>

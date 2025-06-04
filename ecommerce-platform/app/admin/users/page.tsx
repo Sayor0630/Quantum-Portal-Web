@@ -81,7 +81,7 @@ export default function ManageAdminUsersPage() {
     }
     modals.openConfirmModal({
         title: 'Delete Admin User', centered: true,
-        children: (<Text size="sm">Are you sure you want to delete the admin user "<strong>{userEmail}</strong>"? This action is permanent.</Text>),
+        children: (<Text size="sm">Are you sure you want to delete the admin user &quot;<strong>{userEmail}</strong>&quot;? This action is permanent.</Text>),
         labels: { confirm: 'Delete User', cancel: 'Cancel' }, confirmProps: { color: 'red' },
         onConfirm: async () => {
             setDeletingAdminUserId(userId);

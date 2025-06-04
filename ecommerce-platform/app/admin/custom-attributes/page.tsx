@@ -66,7 +66,7 @@ export default function CustomAttributesPage() {
       centered: true,
       children: (
         <Text size="sm">
-          Are you sure you want to delete the attribute "{attributeName}"? This action is irreversible.
+          Are you sure you want to delete the attribute &quot;{attributeName}&quot;? This action is irreversible.
           Products using this attribute will have it cleared.
         </Text>
       ),
@@ -177,7 +177,7 @@ export default function CustomAttributesPage() {
          <ScrollArea>
              <LoadingOverlay visible={isLoading && attributes.length > 0} overlayProps={{ radius: 'sm', blur: 1 }} />
              {!isLoading && !error && attributes.length === 0 && (
-                 <Text p="xl" ta="center" c="dimmed">No custom attributes defined yet. Click "Add New Attribute" to get started.</Text>
+                 <Text p="xl" ta="center" c="dimmed">No custom attributes defined yet. Click &quot;Add New Attribute&quot; to get started.</Text>
              )}
              {!error && attributes.length > 0 && (
                  <Table striped highlightOnHover verticalSpacing="sm" miw={700}>
