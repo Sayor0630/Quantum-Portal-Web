@@ -90,11 +90,11 @@ export default function NewProductPage() {
 
   const productNameForSlug = form.values.name; // Watch product name for slug generation
   useEffect(() => {
-    if (productNameForSlug && !form.DIRTY_FIELDS.slug && !form.values.slug) { // Only if slug is empty and not manually touched
+    if (productNameForSlug && !form.isDirty('slug') && !form.values.slug) { // Only if slug is empty and not manually touched
       form.setFieldValue('slug', generateSlugFromName(productNameForSlug));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productNameForSlug, form.DIRTY_FIELDS.slug]); // form.setFieldValue removed
+  }, [productNameForSlug, form.values.slug]); // form.setFieldValue removed, form.isDirty('slug') is not needed as a direct dep here if logic is inside
 
   useEffect(() => {
      if (authStatus === 'unauthenticated') {
@@ -291,7 +291,7 @@ export default function NewProductPage() {
 
         <Group justify="flex-end" mt="xl">
           <Button variant="default" onClick={() => router.push('/admin/products')} leftSection={<IconX size={16}/>} disabled={isLoading || isUploading}>Cancel</Button>
-          <Button type="submit" leftSection={<IconDeviceFloppy size={16}/>} disabled={isLoading || isMetaLoading || isUploading}>Save Product</Button>
+          <Button type="submit" leftSection={<IconDeviceFloppy size={16}/>} disabled={isLoading || isMetaLoading || isUploading || !form.isDirty()}>Save Product</Button>
         </Group>
       </Paper>
       <Space h="xl" />

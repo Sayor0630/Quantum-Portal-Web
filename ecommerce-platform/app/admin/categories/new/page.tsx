@@ -55,11 +55,11 @@ export default function NewCategoryPage() {
 
   const categoryName = form.values.name;
   useEffect(() => {
-    if (categoryName && (!form.values.slug || !form.DIRTY_FIELDS.slug)) {
+    if (categoryName && (!form.values.slug || !form.isDirty('slug'))) {
         form.setFieldValue('slug', generateSlugFromName(categoryName));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryName, form.DIRTY_FIELDS.slug]);
+  }, [categoryName, form.values.slug]);
 
   useEffect(() => {
      if (authStatus === 'unauthenticated') {
@@ -193,7 +193,7 @@ export default function NewCategoryPage() {
           <Button variant="default" onClick={() => router.push('/admin/categories')} leftSection={<IconX size={16}/>} disabled={isLoading}>
              Cancel
           </Button>
-          <Button type="submit" leftSection={<IconDeviceFloppy size={16}/>} disabled={isLoading || isCategoriesLoading}>
+          <Button type="submit" leftSection={<IconDeviceFloppy size={16}/>} disabled={isLoading || isCategoriesLoading || !form.isDirty()}>
              Save Category
           </Button>
         </Group>

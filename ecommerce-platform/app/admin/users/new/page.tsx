@@ -131,7 +131,7 @@ export default function NewAdminUserPage() {
 
         <Group justify="flex-end" mt="xl">
           <Button variant="default" onClick={() => router.push('/admin/users')} leftSection={<IconX size={16}/>} disabled={isLoading}>Cancel</Button>
-          <Button type="submit" leftSection={<IconDeviceFloppy size={16}/>} loading={isLoading}>Create Admin User</Button>
+          <Button type="submit" leftSection={<IconDeviceFloppy size={16}/>} loading={isLoading} disabled={isLoading || !form.isDirty()}>Create Admin User</Button>
         </Group>
       </Paper>
       <Space h="xl" />

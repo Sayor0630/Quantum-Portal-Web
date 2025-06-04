@@ -158,7 +158,7 @@ export default function NewCustomAttributePage() {
 
           <Group justify="flex-end" mt="xl">
             <Button variant="default" onClick={() => router.push('/admin/custom-attributes')} disabled={isLoading}>Cancel</Button>
-            <Button type="submit" leftSection={<IconDeviceFloppy size={16}/>} disabled={isLoading}>Save Attribute</Button>
+            <Button type="submit" leftSection={<IconDeviceFloppy size={16}/>} disabled={isLoading || !form.isDirty()}>Save Attribute</Button>
           </Group>
         </form>
       </Paper>

@@ -263,7 +263,7 @@ export default function NewHomepageSectionPage() {
           <Button
             type="submit"
             leftSection={<IconDeviceFloppy size={16}/>}
-            disabled={isLoading || !selectedType || (isMetaLoading && (selectedType === 'productCarousel' || selectedType === 'featuredProducts' || selectedType === 'categoryList'))}
+            disabled={isLoading || !selectedType || (isMetaLoading && (selectedType === 'productCarousel' || selectedType === 'featuredProducts' || selectedType === 'categoryList')) || !form.isDirty()}
           >
             Save Section
           </Button>

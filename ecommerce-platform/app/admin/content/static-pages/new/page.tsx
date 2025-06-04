@@ -66,14 +66,14 @@ export default function NewStaticPage() {
   });
 
   const pageTitle = form.values.title;
-  const slugManuallySet = form.DIRTY_FIELDS.slug; // Track if slug was manually edited
+  // const slugManuallySet = form.DIRTY_FIELDS.slug; // Replaced with form.isDirty('slug')
 
   useEffect(() => {
-    if (pageTitle && !slugManuallySet && !form.values.slug) { // Only auto-fill if slug is empty and not manually touched
+    if (pageTitle && !form.isDirty('slug') && !form.values.slug) { // Only auto-fill if slug is empty and not manually touched
         form.setFieldValue('slug', generateSlug(pageTitle));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageTitle, slugManuallySet]); // form.setFieldValue removed
+  }, [pageTitle, form.values.slug]); // form.setFieldValue removed, form.isDirty('slug') not needed as direct dep
 
   useEffect(() => {
      if (authStatus === 'unauthenticated') router.replace('/admin/login');
@@ -172,7 +172,7 @@ export default function NewStaticPage() {
 
         <Group justify="flex-end" mt="xl">
           <Button variant="default" onClick={() => router.push('/admin/content/static-pages')} leftSection={<IconX size={16} />} disabled={isLoading}>Cancel</Button>
-          <Button type="submit" leftSection={<IconDeviceFloppy size={16}/>} loading={isLoading}>Save Page</Button>
+          <Button type="submit" leftSection={<IconDeviceFloppy size={16}/>} loading={isLoading} disabled={isLoading || !form.isDirty()}>Save Page</Button>
         </Group>
       </Paper>
       <Space h="xl" />
