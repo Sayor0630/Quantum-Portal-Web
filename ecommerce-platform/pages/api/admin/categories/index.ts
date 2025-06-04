@@ -3,12 +3,13 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../../auth/[...nextauth]';
 import connectToDatabase from '../../../../lib/dbConnect';
 import Category from '../../../../models/Category';
-import Product from '../../../../models/Product'; // To handle products on category deletion later if needed
+import Product from '../../../../models/Product';
 import mongoose from 'mongoose';
 
-// Helper function to generate a slug
-const generateSlug = (name: string) => {
-  return name.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+// Helper function to generate a slug (ensure this matches model's version if shared)
+const generateSlugFromName = (name: string) => {
+  if (!name) return '';
+  return name.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '').replace(/--+/g, '-').replace(/^-+/, '').replace(/-+$/, '');
 };
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -20,12 +21,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   await connectToDatabase();
 
   switch (req.method) {
-    case 'GET': // List all categories
+    case 'GET':
       try {
         const categories = await Category.find({})
           .populate('parent', 'name slug')
-          // Not populating children here to avoid overly complex/large responses by default
-          // Frontend can make subsequent calls for children if needed for a specific category
           .sort({ name: 1 });
         return res.status(200).json(categories);
       } catch (error) {
@@ -33,20 +32,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(500).json({ message: 'Error fetching categories', error: (error as Error).message });
       }
 
-    case 'POST': // Create a new category
+    case 'POST':
       try {
-        let { name, slug, parent } = req.body;
+        let { name, slug, parent, isPublished } = req.body; // Added isPublished
 
         if (!name) {
           return res.status(400).json({ message: 'Category name is required' });
         }
+
+        // Slug generation/cleaning logic (model pre-save hook will also run)
         if (!slug) {
-          slug = generateSlug(name);
+          slug = generateSlugFromName(name);
         } else {
-          slug = generateSlug(slug); // Ensure slug is clean
+          slug = generateSlugFromName(slug);
+        }
+        if (!slug) { // If name was empty and generated an empty slug
+            return res.status(400).json({ message: 'Slug could not be generated. Name is likely empty.' });
         }
 
-        if (parent === '') parent = null; // Treat empty string as no parent
+
+        if (parent === '') parent = null;
 
         let parentCategoryId = null;
         if (parent) {
@@ -60,22 +65,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           parentCategoryId = parentCategoryDoc._id;
         }
 
-        const newCategory = new Category({ name, slug, parent: parentCategoryId });
+        const newCategory = new Category({
+            name,
+            slug,
+            parent: parentCategoryId,
+            isPublished: isPublished !== undefined ? isPublished : false, // Default to false
+        });
         await newCategory.save();
 
-        // If a parent exists, add this new category to its children array
         if (parentCategoryId) {
           await Category.updateOne(
             { _id: parentCategoryId },
-            { $addToSet: { children: newCategory._id } } // Use $addToSet to avoid duplicates
+            { $addToSet: { children: newCategory._id } }
           );
         }
 
         return res.status(201).json(newCategory);
       } catch (error) {
-        if ((error as any).code === 11000) { // Duplicate key error for name or slug
+        if ((error as any).code === 11000) {
           const field = Object.keys((error as any).keyPattern)[0];
           return res.status(409).json({ message: `A category with this ${field} already exists.` });
+        }
+        if (error instanceof mongoose.Error.ValidationError) {
+            return res.status(400).json({ message: 'Validation error', errors: error.errors });
         }
         console.error('Error creating category:', error);
         return res.status(500).json({ message: 'Error creating category', error: (error as Error).message });

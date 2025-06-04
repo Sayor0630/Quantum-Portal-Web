@@ -21,7 +21,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const limit = parseInt(req.query.limit as string) || 10;
         const categoryId = req.query.categoryId as string;
         const searchQuery = req.query.search as string;
-        const fields = req.query.fields as string; // For selecting specific fields e.g. name,_id
+        const fields = req.query.fields as string;
 
         const query: any = {};
         if (categoryId) {
@@ -34,7 +34,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             query.$or = [
                 { name: { $regex: searchQuery, $options: 'i' } },
                 { sku: { $regex: searchQuery, $options: 'i' } },
-                // { description: { $regex: searchQuery, $options: 'i' } } // Description search can be heavy
             ];
         }
 
@@ -42,7 +41,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (fields) {
             productQuery = productQuery.select(fields.split(',').join(' '));
         } else {
-            // Default population if not specific fields requested for lightweight list
             productQuery = productQuery.populate('category', 'name slug');
         }
 
@@ -59,7 +57,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           products,
           currentPage: page,
           totalPages,
-          totalItems: totalProducts, // Changed from totalProducts for consistency
+          totalItems: totalProducts,
         });
       } catch (error) {
         console.error('Error fetching products:', error);
@@ -68,8 +66,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     case 'POST':
       try {
-        // Destructure new SEO fields
-        const { name, description, price, sku, stockQuantity, category, tags, customAttributes, images, seoTitle, seoDescription } = req.body;
+        const {
+            name, description, price, sku, stockQuantity, category,
+            tags, customAttributes, images,
+            seoTitle, seoDescription,
+            slug, isPublished // Added slug and isPublished
+        } = req.body;
 
         if (!name || !description || price === undefined || !sku) {
           return res.status(400).json({ message: 'Missing required fields: name, description, price, SKU' });
@@ -85,7 +87,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           }
         }
 
-        const newProduct = await Product.create({
+        const newProductData: any = {
           name,
           description,
           price,
@@ -95,13 +97,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           tags: tags || [],
           customAttributes: customAttributes || {},
           images: images || [],
-          seoTitle: seoTitle || undefined, // Add seoTitle
-          seoDescription: seoDescription || undefined, // Add seoDescription
-        });
+          seoTitle: seoTitle || undefined,
+          seoDescription: seoDescription || undefined,
+          isPublished: isPublished !== undefined ? isPublished : false, // Default to false if not provided
+        };
+
+        if (slug) { // If slug is provided, include it; pre-save hook will format/validate
+            newProductData.slug = slug;
+        }
+        // If slug is not provided, the pre-save hook in the model will generate it from 'name'
+
+        const newProduct = await Product.create(newProductData);
         return res.status(201).json(newProduct);
       } catch (error) {
-        if ((error as any).code === 11000 && (error as any).keyPattern?.sku) {
-          return res.status(409).json({ message: 'A product with this SKU already exists.' });
+        if ((error as any).code === 11000 && ((error as any).keyPattern?.sku || (error as any).keyPattern?.slug) ) {
+          const field = (error as any).keyPattern?.sku ? 'SKU' : 'slug';
+          return res.status(409).json({ message: `A product with this ${field} already exists.` });
         }
         if (error instanceof mongoose.Error.ValidationError) {
             return res.status(400).json({ message: 'Validation error', errors: error.errors });

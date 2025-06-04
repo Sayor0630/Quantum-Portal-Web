@@ -1,12 +1,12 @@
 'use client';
 
 import AdminLayout from '../../../../../components/admin/AdminLayout';
-import { Title, Paper, TextInput, Button, Group, LoadingOverlay, Alert, Select, Space, Text, Skeleton, Grid } from '@mantine/core'; // Added Skeleton, Grid
+import { Title, Paper, TextInput, Button, Group, LoadingOverlay, Alert, Select, Space, Text, Skeleton, Grid, Switch } from '@mantine/core'; // Added Switch
 import { useForm, yupResolver } from '@mantine/form';
 import * as Yup from 'yup';
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter, useParams } from 'next/navigation'; // Added useParams
-import { IconDeviceFloppy, IconAlertCircle, IconX } from '@tabler/icons-react';
+import { useRouter, useParams } from 'next/navigation';
+import { IconDeviceFloppy, IconAlertCircle, IconX, IconArrowLeft } from '@tabler/icons-react'; // Added IconArrowLeft
 import { notifications } from '@mantine/notifications';
 import { useSession } from 'next-auth/react';
 
@@ -19,10 +19,12 @@ interface CategoryDataFromAPI {
    _id: string;
    name: string;
    slug: string;
-   parent?: { _id: string; name: string; } | string | null; // API might send populated or just ID
+   parent?: { _id: string; name: string; } | string | null;
+   isPublished?: boolean; // Added
 }
 
-const generateSlug = (name: string) => {
+// Renamed for clarity from the model's generateSlugFromName
+const generateSlugForCategory = (name: string) => {
     if (!name) return '';
     return name.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '').replace(/--+/g, '-').replace(/^-+/, '').replace(/-+$/, '');
 };
@@ -31,6 +33,7 @@ const schema = Yup.object().shape({
   name: Yup.string().required('Category name is required'),
   slug: Yup.string().required('Slug is required').matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug must be lowercase alphanumeric with hyphens.'),
   parent: Yup.string().nullable(),
+  isPublished: Yup.boolean(), // Added
 });
 
 export default function EditCategoryPage() {
@@ -39,40 +42,33 @@ export default function EditCategoryPage() {
   const categoryId = params.categoryId as string;
   const { data: session, status: authStatus } = useSession();
 
-  const [isLoading, setIsLoading] = useState(false); // For form submission
-  const [isFetchingCategory, setIsFetchingCategory] = useState(true); // For initial data load
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFetchingCategory, setIsFetchingCategory] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
   const [categoriesForSelect, setCategoriesForSelect] = useState<CategoryOption[]>([]);
-  const [isCategoriesLoading, setIsCategoriesLoading] = useState(true); // For parent categories dropdown
-  const [originalSlug, setOriginalSlug] = useState('');
-
+  const [isCategoriesLoading, setIsCategoriesLoading] = useState(true);
+  const [originalName, setOriginalName] = useState(''); // To help with slug logic on name change
 
   const form = useForm({
     initialValues: {
       name: '',
       slug: '',
       parent: null as string | null,
+      isPublished: false, // Added
     },
     validate: yupResolver(schema),
   });
 
-  const categoryName = form.values.name;
+  const currentCategoryName = form.values.name;
   useEffect(() => {
-    // Auto-generate slug if:
-    // 1. Name is changed by user AND
-    // 2. Slug field is currently empty OR slug field matches the auto-generated slug of the *original* name (before edit)
-    // OR if the slug field was not manually touched by the user after name change.
-    // This is complex. Simpler: if name changes, and slug is empty, or slug was the original auto-slug, then update.
-    if (categoryName && (!form.values.slug || (originalSlug && form.values.slug === generateSlug(form.values.name_before_edit_if_tracked)) || !form.DIRTY_FIELDS.slug )) {
-        // form.values.name_before_edit_if_tracked would need to be stored if using that logic
-        // For now, only generate if slug becomes empty or was not touched while name changed
-        if (form.values.slug === '' || (form.DIRTY_FIELDS.name && !form.DIRTY_FIELDS.slug)) {
-             form.setFieldValue('slug', generateSlug(categoryName));
-        }
+    if (currentCategoryName && currentCategoryName !== originalName && !form.DIRTY_FIELDS.slug) {
+        // If name changed and slug wasn't manually touched, regenerate slug
+        form.setFieldValue('slug', generateSlugForCategory(currentCategoryName));
+    } else if (currentCategoryName && form.values.slug === '') { // If slug becomes empty, regenerate
+        form.setFieldValue('slug', generateSlugForCategory(currentCategoryName));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryName, originalSlug, form.DIRTY_FIELDS.name, form.DIRTY_FIELDS.slug]);
-
+  }, [currentCategoryName, originalName]); // form.DIRTY_FIELDS.slug removed, form.setFieldValue removed
 
   useEffect(() => {
      if (authStatus === 'unauthenticated') {
@@ -87,7 +83,7 @@ export default function EditCategoryPage() {
                  const data = await response.json();
                  setCategoriesForSelect(
                      data
-                        .filter((cat: any) => cat._id !== categoryId) // Filter out current category
+                        .filter((cat: any) => cat._id !== categoryId)
                         .map((cat: any) => ({ value: cat._id, label: cat.name }))
                  );
              } catch (err: any) {
@@ -116,8 +112,10 @@ export default function EditCategoryPage() {
                     name: data.name,
                     slug: data.slug,
                     parent: typeof data.parent === 'string' ? data.parent : data.parent?._id || null,
+                    isPublished: data.isPublished || false, // Populate isPublished
                 });
-                setOriginalSlug(data.slug); // Store original slug for auto-generation logic
+                setOriginalName(data.name); // Store original name for slug logic
+                form.resetDirty(); // Reset dirty state after initial population
             } catch (err: any) {
                 setApiError(err.message);
                 notifications.show({ title: 'Error', message: `Failed to load category: ${err.message}`, color: 'red' });
@@ -128,7 +126,7 @@ export default function EditCategoryPage() {
         fetchCategoryData();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryId, authStatus]); // form.setValues removed
+  }, [categoryId, authStatus]);
 
 
   const handleSubmit = async (values: typeof form.values) => {
@@ -139,6 +137,7 @@ export default function EditCategoryPage() {
         name: values.name,
         slug: values.slug,
         parent: values.parent || null,
+        isPublished: values.isPublished, // Added
       };
       const response = await fetch(`/api/admin/categories/${categoryId}`, {
         method: 'PUT',
@@ -155,7 +154,9 @@ export default function EditCategoryPage() {
          color: 'green',
          icon: <IconDeviceFloppy />,
       });
-      router.push('/admin/categories');
+      setOriginalName(data.name); // Update original name after successful save
+      form.resetDirty(data); // Reset dirty state with new values
+      // router.push('/admin/categories'); // Optional: redirect or stay
     } catch (err: any) {
       setApiError(err.message || 'An unexpected error occurred.');
       notifications.show({
@@ -169,14 +170,15 @@ export default function EditCategoryPage() {
     }
   };
 
-  if (authStatus === 'loading' || (isCategoriesLoading && authStatus === 'authenticated') || (isFetchingCategory && authStatus === 'authenticated')) {
+  if (authStatus === 'loading' || ((isCategoriesLoading || isFetchingCategory) && authStatus === 'authenticated')) {
      return (
          <AdminLayout>
             <Title order={2} mb="xl">Edit Category</Title>
-             <Paper withBorder shadow="md" p={30} radius="md">
-                 <Skeleton height={36} mb="md" /> {/* Name */}
-                 <Skeleton height={36} mb="md" /> {/* Slug */}
-                 <Skeleton height={36} mb="xl" /> {/* Parent Category */}
+             <Paper withBorder shadow="md" p="xl" radius="md"> {/* Increased padding */}
+                 <Skeleton height={36} mb="md" />
+                 <Skeleton height={36} mb="md" />
+                 <Skeleton height={36} mb="md" /> {/* Parent Category */}
+                 <Skeleton height={24} mb="xl" width="60%"/> {/* isPublished Switch */}
                  <Group justify="flex-end" mt="xl">
                     <Skeleton height={36} width={100} />
                     <Skeleton height={36} width={150} />
@@ -188,24 +190,27 @@ export default function EditCategoryPage() {
    if (authStatus === 'unauthenticated') {
      return <Text p="xl">Redirecting to login...</Text>;
   }
-   if (apiError && !isFetchingCategory && !isLoading) { // Show error if initial fetch failed
+   if (apiError && !isFetchingCategory && !isLoading && !form.isDirty()) {
     return (
         <AdminLayout>
-            <Title order={2} mb="xl">Edit Category</Title>
-            <Alert icon={<IconAlertCircle size="1rem" />} title="Failed to load category data" color="red">
-                {apiError} Please try <Button variant="subtle" size="xs" onClick={() => window.location.reload()}>reloading</Button>.
-            </Alert>
+            <Group justify="space-between" mb="xl"><Title order={2}>Edit Category</Title><Button variant="outline" component={Link} href="/admin/categories" leftSection={<IconArrowLeft size={16}/>}>Back</Button></Group>
+            <Alert icon={<IconAlertCircle size="1rem" />} title="Failed to load category data" color="red">{apiError}</Alert>
         </AdminLayout>
     );
   }
 
   return (
     <AdminLayout>
-      <Title order={2} mb="xl">Edit Category: {form.values.name || 'Loading...'}</Title>
-      <Paper component="form" onSubmit={form.onSubmit(handleSubmit)} withBorder shadow="md" p={30} radius="md" pos="relative">
+      <Group justify="space-between" mb="xl">
+        <Title order={2}>Edit Category: {form.values.name || "Loading..."}</Title>
+        <Button variant="outline" component={Link} href="/admin/categories" leftSection={<IconArrowLeft size={16}/>}>
+            Back to Categories
+        </Button>
+      </Group>
+      <Paper component="form" onSubmit={form.onSubmit(handleSubmit)} withBorder shadow="md" p="xl" radius="md" pos="relative" maw={700}> {/* Increased padding */}
         <LoadingOverlay visible={isLoading} overlayProps={{ radius: 'sm', blur: 2 }} />
 
-        {apiError && !isLoading && ( // Show submit error if not loading
+        {apiError && !isLoading && (
           <Alert icon={<IconAlertCircle size="1rem" />} title="API Error!" color="red" withCloseButton onClose={() => setApiError(null)} mb="md">
             {apiError}
           </Alert>
@@ -222,10 +227,10 @@ export default function EditCategoryPage() {
           label="Slug"
           placeholder="e.g., electronics, books"
           required
-          description="URL-friendly identifier. Auto-updated if name changes and slug was not manually set."
+          description="URL-friendly identifier. Auto-updates if name changes and slug was not manually set, or customize it."
           {...form.getInputProps('slug')}
            onChange={(event) => {
-            form.setFieldValue('slug', generateSlug(event.currentTarget.value));
+            form.setFieldValue('slug', generateSlugForCategory(event.currentTarget.value)); // Use renamed helper
             form.setDirty({ slug: true });
           }}
           mb="md"
@@ -238,14 +243,19 @@ export default function EditCategoryPage() {
           clearable
           disabled={isCategoriesLoading || isFetchingCategory}
           {...form.getInputProps('parent')}
-          mb="xl"
+          mb="md" // Changed from mb="xl"
+        />
+        <Switch
+            label="Publish Category (Visible on storefront)"
+            {...form.getInputProps('isPublished', { type: 'checkbox' })}
+            mb="xl"
         />
 
         <Group justify="flex-end" mt="xl">
           <Button variant="default" onClick={() => router.push('/admin/categories')} leftSection={<IconX size={16}/>} disabled={isLoading || isFetchingCategory}>
              Cancel
           </Button>
-          <Button type="submit" leftSection={<IconDeviceFloppy size={16}/>} disabled={isLoading || isCategoriesLoading || isFetchingCategory || !form.isDirty()}>
+          <Button type="submit" leftSection={<IconDeviceFloppy size={16}/>} loading={isLoading} disabled={isLoading || isCategoriesLoading || isFetchingCategory || !form.isDirty()}>
              Save Changes
           </Button>
         </Group>

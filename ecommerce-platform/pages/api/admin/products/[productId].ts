@@ -26,7 +26,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       try {
         const product = await Product.findById(productObjectId)
             .populate('category', 'name slug')
-            .lean(); // Use lean for faster reads if not modifying before sending
+            .lean();
         if (!product) {
           return res.status(404).json({ message: 'Product not found' });
         }
@@ -38,13 +38,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     case 'PUT':
       try {
-        // Destructure all possible fields, including new SEO fields
-        const { name, description, price, sku, stockQuantity, category, tags, customAttributes, images, seoTitle, seoDescription } = req.body;
+        const {
+            name, description, price, sku, stockQuantity, category,
+            tags, customAttributes, images,
+            seoTitle, seoDescription,
+            slug, isPublished // Added slug and isPublished
+        } = req.body;
 
-        // Start with an empty updateData object
         const updateData: any = {};
 
-        // Conditionally add fields to updateData if they are present in the request body
         if (name !== undefined) updateData.name = name;
         if (description !== undefined) updateData.description = description;
         if (price !== undefined) updateData.price = price;
@@ -52,11 +54,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (tags !== undefined) updateData.tags = tags || [];
         if (customAttributes !== undefined) updateData.customAttributes = customAttributes || {};
         if (images !== undefined) updateData.images = images || [];
-        if (seoTitle !== undefined) updateData.seoTitle = seoTitle || ''; // Allow empty string to clear
-        if (seoDescription !== undefined) updateData.seoDescription = seoDescription || ''; // Allow empty string to clear
+        if (seoTitle !== undefined) updateData.seoTitle = seoTitle || '';
+        if (seoDescription !== undefined) updateData.seoDescription = seoDescription || '';
+        if (isPublished !== undefined) updateData.isPublished = isPublished; // Add isPublished
+        if (slug !== undefined) { // If slug is explicitly sent, use it (model hook will format)
+            updateData.slug = slug;
+        } else if (name !== undefined) {
+            // If name is changing, and slug is not explicitly provided,
+            // the model's pre-save hook should ideally regenerate the slug.
+            // To ensure this, we can make slug dependent on name changing if not provided.
+            // However, if 'slug' is not in updateData, the hook only runs if 'name' changed AND slug wasn't modified.
+            // To be safe, if name is in updateData, we can explicitly set slug to be undefined
+            // so the hook re-evaluates based on new name, unless a slug was also part of req.body.
+            // For now, rely on model hook: if name changes and slug is not in req.body, hook should handle it.
+            // If slug IS in req.body (even empty string), it's handled by `updateData.slug = slug` above.
+        }
 
 
-        if (category) { // If category is explicitly provided in body
+        if (category) {
           if (!mongoose.Types.ObjectId.isValid(category)) {
              return res.status(400).json({ message: 'Invalid category ID format for product category' });
           }
@@ -65,7 +80,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return res.status(404).json({ message: 'Category not found' });
           }
           updateData.category = new mongoose.Types.ObjectId(category);
-        } else if (category === null || category === '') { // Allow unsetting the category by sending null or empty string
+        } else if (category === null || category === '') {
             updateData.category = null;
         }
 
@@ -77,16 +92,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             updateData.sku = sku;
         }
 
-        // Prevent empty object from being sent if no valid fields were in req.body (though schema validation on client should prevent this)
-        if (Object.keys(updateData).length === 0 && !category && !sku) { // Check if only category/sku were potentially sent but were invalid/empty
-             // This check might be too strict if only category or sku is being updated.
-             // Let's assume client sends at least one valid field or form has validation.
-             // If req.body itself is empty, findByIdAndUpdate with empty updateData does nothing.
+        // If slug is being explicitly changed to something, check for uniqueness
+        if (updateData.slug) {
+            const existingProductBySlug = await Product.findOne({ slug: updateData.slug, _id: { $ne: productObjectId } });
+            if (existingProductBySlug) {
+                return res.status(409).json({ message: 'Another product with this slug already exists.' });
+            }
         }
+
 
         const updatedProduct = await Product.findByIdAndUpdate(
           productObjectId,
-          { $set: updateData }, // Use $set to ensure only provided fields are updated
+          { $set: updateData },
           { new: true, runValidators: true }
         ).populate('category', 'name slug');
 
@@ -95,8 +112,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
         return res.status(200).json(updatedProduct);
       } catch (error) {
-        if ((error as any).code === 11000 && (error as any).keyPattern?.sku) {
-          return res.status(409).json({ message: 'A product with this SKU already exists.' });
+        if ((error as any).code === 11000 && ((error as any).keyPattern?.sku || (error as any).keyPattern?.slug)) {
+          const field = (error as any).keyPattern?.sku ? 'SKU' : 'slug';
+          return res.status(409).json({ message: `A product with this ${field} already exists.` });
         }
         if (error instanceof mongoose.Error.ValidationError) {
             return res.status(400).json({ message: 'Validation error', errors: error.errors });

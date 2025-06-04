@@ -1,12 +1,12 @@
 'use client';
 
 import AdminLayout from '../../../../components/admin/AdminLayout';
-import { Title, Paper, TextInput, Button, Group, LoadingOverlay, Alert, Select, Space, Text } from '@mantine/core';
+import { Title, Paper, TextInput, Button, Group, LoadingOverlay, Alert, Select, Space, Text, Switch } from '@mantine/core'; // Added Switch
 import { useForm, yupResolver } from '@mantine/form';
 import * as Yup from 'yup';
-import { useState, useEffect, useCallback } from 'react'; // Added useCallback
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { IconDeviceFloppy, IconAlertCircle, IconX, IconPlus } from '@tabler/icons-react'; // IconPlus is already imported by other pages, can keep for consistency
+import { IconDeviceFloppy, IconAlertCircle, IconX } from '@tabler/icons-react'; // Removed IconPlus
 import { notifications } from '@mantine/notifications';
 import { useSession } from 'next-auth/react';
 
@@ -15,7 +15,7 @@ interface CategoryOption {
   label: string;
 }
 
-const generateSlug = (name: string) => {
+const generateSlugFromName = (name: string) => { // Renamed for clarity
     if (!name) return '';
     return name
     .toLowerCase()
@@ -32,36 +32,34 @@ const schema = Yup.object().shape({
     .required('Slug is required')
     .matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug must be lowercase alphanumeric with hyphens, and no leading/trailing hyphens.'),
   parent: Yup.string().nullable(),
+  isPublished: Yup.boolean(), // Added
 });
 
 export default function NewCategoryPage() {
   const router = useRouter();
   const { data: session, status: authStatus } = useSession();
-  const [isLoading, setIsLoading] = useState(false); // For form submission
+  const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [categoriesForSelect, setCategoriesForSelect] = useState<CategoryOption[]>([]);
-  const [isCategoriesLoading, setIsCategoriesLoading] = useState(true); // For parent categories dropdown
+  const [isCategoriesLoading, setIsCategoriesLoading] = useState(true);
 
   const form = useForm({
     initialValues: {
       name: '',
       slug: '',
-      parent: null as string | null, // Explicitly type as string | null
+      parent: null as string | null,
+      isPublished: false, // Added
     },
     validate: yupResolver(schema),
   });
 
-  // Auto-generate slug from name, only if slug field hasn't been manually touched or is empty
   const categoryName = form.values.name;
-  const slugManuallySet = !!form.values.slug; // Check if slug has been set (even if to empty by user)
-
   useEffect(() => {
     if (categoryName && (!form.values.slug || !form.DIRTY_FIELDS.slug)) {
-        // If name changes and slug field is empty OR slug field was not manually changed by user
-        form.setFieldValue('slug', generateSlug(categoryName));
+        form.setFieldValue('slug', generateSlugFromName(categoryName));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryName, form.DIRTY_FIELDS.slug]); // form.setFieldValue removed from deps
+  }, [categoryName, form.DIRTY_FIELDS.slug]);
 
   useEffect(() => {
      if (authStatus === 'unauthenticated') {
@@ -77,7 +75,7 @@ export default function NewCategoryPage() {
                  setCategoriesForSelect(
                      data.map((cat: any) => ({ value: cat._id, label: cat.name }))
                  );
-             } catch (err: any) { // Catch any type
+             } catch (err: any) {
                  notifications.show({ title: 'Error', message: err.message || 'Could not load parent categories.', color: 'red' });
              } finally {
                  setIsCategoriesLoading(false);
@@ -95,8 +93,9 @@ export default function NewCategoryPage() {
     try {
       const payload = {
         name: values.name,
-        slug: values.slug, // Slug is now required and validated by Yup
+        slug: values.slug,
         parent: values.parent || null,
+        isPublished: values.isPublished, // Added
       };
 
       const response = await fetch('/api/admin/categories', {
@@ -115,11 +114,11 @@ export default function NewCategoryPage() {
          title: 'Category Created',
          message: `Category "${data.name}" has been successfully created.`,
          color: 'green',
-         icon: <IconDeviceFloppy />, // Changed icon to floppy for save/create
+         icon: <IconDeviceFloppy />,
       });
       router.push('/admin/categories');
 
-    } catch (err: any) { // Catch any type
+    } catch (err: any) {
       setApiError(err.message || 'An unexpected error occurred.');
       notifications.show({
          title: 'Error Creating Category',
@@ -146,7 +145,7 @@ export default function NewCategoryPage() {
   return (
     <AdminLayout>
       <Title order={2} mb="xl">Add New Category</Title>
-      <Paper component="form" onSubmit={form.onSubmit(handleSubmit)} withBorder shadow="md" p={30} radius="md" pos="relative">
+      <Paper component="form" onSubmit={form.onSubmit(handleSubmit)} withBorder shadow="md" p="xl" radius="md" pos="relative" maw={700}> {/* Increased padding */}
         <LoadingOverlay visible={isLoading} overlayProps={{ radius: 'sm', blur: 2 }} />
 
         {apiError && (
@@ -169,8 +168,8 @@ export default function NewCategoryPage() {
           description="URL-friendly identifier. Auto-generated from name if left empty, or you can customize it."
           {...form.getInputProps('slug')}
           onChange={(event) => {
-            form.setFieldValue('slug', generateSlug(event.currentTarget.value));
-            form.setDirty({ slug: true }); // Mark as dirty if user types in slug field
+            form.setFieldValue('slug', generateSlugFromName(event.currentTarget.value)); // Use renamed helper
+            form.setDirty({ slug: true });
           }}
           mb="md"
         />
@@ -182,7 +181,12 @@ export default function NewCategoryPage() {
           clearable
           disabled={isCategoriesLoading}
           {...form.getInputProps('parent')}
-          mb="xl"
+          mb="md" // Changed from mb="xl"
+        />
+        <Switch
+            label="Publish Category (Visible on storefront)"
+            {...form.getInputProps('isPublished', { type: 'checkbox' })}
+            mb="xl"
         />
 
         <Group justify="flex-end" mt="xl">

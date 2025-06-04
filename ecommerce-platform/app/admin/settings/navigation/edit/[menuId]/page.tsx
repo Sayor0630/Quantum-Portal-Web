@@ -32,7 +32,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { restrictToVerticalAxis } from '@dnd-kit/modifiers'; // Removed restrictToWindowEdges for now
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 
 interface MenuItem {
   _id?: string;
@@ -55,10 +55,10 @@ function SortableMenuItem({ item, onEdit, onDelete, onAddChild, level = 0, isOve
     item: MenuItem,
     onEdit: (item: MenuItem) => void,
     onDelete: (item: MenuItem) => void,
-    onAddChild: (parentId: string) => void, // ParentId is clientId
+    onAddChild: (parentId: string) => void,
     level?: number,
     isOverlay?: boolean,
-    activeId?: string | null, // To conditionally render SortableContext for children
+    activeId?: string | null,
 }) {
     const {
         attributes,
@@ -67,19 +67,21 @@ function SortableMenuItem({ item, onEdit, onDelete, onAddChild, level = 0, isOve
         transform,
         transition,
         isDragging,
-    } = useSortable({ id: item.clientId });
+    } = useSortable({ id: item.clientId, data: { type: 'menuItem', parentId: item.parentId, itemData: item } }); // Add item data for onDragEnd
 
     const style = {
         transform: CSS.Transform.toString(transform),
-        transition: isDragging ? 'none' : transition,
+        transition: isDragging && !isOverlay ? 'none' : transition,
         zIndex: isDragging ? 100 : 'auto',
         opacity: isDragging && !isOverlay ? 0.5 : 1,
         marginLeft: level * 25,
         cursor: isOverlay ? 'grabbing' : (listeners ? 'grab' : 'default'),
+        border: isDragging && isOverlay ? '1px dashed #228be6' : undefined, // Style for dragged overlay
+        backgroundColor: isDragging && isOverlay ? 'rgba(222, 237, 255, 0.7)' : undefined,
     };
 
     return (
-        <Paper ref={setNodeRef} style={style} p="xs" mb="xs" withBorder radius="sm" shadow={isDragging ? "xl" : "xs"}>
+        <Paper ref={setNodeRef} style={style} p="xs" mb="xs" withBorder radius="sm" shadow={isDragging && !isOverlay ? "xl" : "xs"}>
             <Group justify="space-between" wrap="nowrap">
                 <Group gap="xs" wrap="nowrap">
                     <ActionIcon {...listeners} {...attributes} variant="transparent" c="dimmed" title="Drag to reorder" style={{ cursor: 'grab' }}>
@@ -94,7 +96,6 @@ function SortableMenuItem({ item, onEdit, onDelete, onAddChild, level = 0, isOve
                     <ActionIcon variant="subtle" color="red" onClick={() => onDelete(item)} aria-label="Delete item"><IconTrash size={16} /></ActionIcon>
                 </Group>
             </Group>
-            {/* Only render SortableContext for children if the item is not being dragged (to avoid nesting issues with DragOverlay) */}
             {item.children && item.children.length > 0 && !isDragging && item.clientId !== activeId && (
                  <SortableContext items={item.children.map(c => c.clientId)} strategy={verticalListSortingStrategy}>
                     <Box mt="xs" style={{paddingLeft: 0}}>
@@ -124,7 +125,7 @@ export default function EditMenuPage() {
   const { data: session, status: authStatus } = useSession();
 
   const [menuName, setMenuName] = useState('');
-  const [items, setItems] = useListState<MenuItem>([]); // Switched to useListState for its handlers
+  const [items, setItems] = useState<MenuItem[]>([]); // Using useState for complex tree updates
 
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(true);
@@ -135,8 +136,7 @@ export default function EditMenuPage() {
   const [parentClientIdForNewItem, setParentClientIdForNewItem] = useState<string | null>(null);
 
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
-  const [activeDraggedItem, setActiveDraggedItem] = useState<MenuItem | null>(null);
-
+  const [activeDraggedItemData, setActiveDraggedItemData] = useState<MenuItem | null>(null); // Store full item data
 
   const itemForm = useForm({ initialValues: { title: '', url: '' }, validate: yupResolver(itemSchema) });
 
@@ -172,7 +172,7 @@ export default function EditMenuPage() {
       setApiError(err.message);
       notifications.show({ title: 'Error Loading Menu', message: err.message, color: 'red' });
     } finally { setIsFetching(false); }
-  }, [menuId, authStatus, setItems, assignClientIdsAndParent]);
+  }, [menuId, authStatus, assignClientIdsAndParent]);
 
   useEffect(() => {
     if (authStatus === 'unauthenticated') router.replace('/admin/login');
@@ -180,9 +180,10 @@ export default function EditMenuPage() {
   }, [authStatus, menuId, router, fetchMenuData]);
 
   // --- CRUD Helper Functions ---
-  const findItemRecursive = (itemsArray: MenuItem[], itemId: string): MenuItem | null => {
-    for (const item of itemsArray) {
-        if (item.clientId === itemId) return item;
+  const findItemRecursive = (itemsArray: MenuItem[], itemId: string): {item: MenuItem, parent: MenuItem[] | null, index: number} | null => {
+    for (let i = 0; i < itemsArray.length; i++) {
+        const item = itemsArray[i];
+        if (item.clientId === itemId) return {item, parent: itemsArray, index: i};
         if (item.children) {
             const found = findItemRecursive(item.children, itemId);
             if (found) return found;
@@ -191,41 +192,65 @@ export default function EditMenuPage() {
     return null;
   };
 
-  const addItemToTree = (currentItems: MenuItem[], targetParentId: string | null, newItem: MenuItem): MenuItem[] => {
+  const addItemToTree = (currentItems: MenuItem[], targetParentId: string | null, newItem: MenuItem, targetIndex?: number): MenuItem[] => {
+    let newItems = [...currentItems];
     if (targetParentId === null) { // Add to root
-        return [...currentItems, { ...newItem, parentId: null, order: currentItems.length }];
+        const finalIndex = targetIndex !== undefined ? targetIndex : newItems.length;
+        newItems.splice(finalIndex, 0, { ...newItem, parentId: null });
+    } else {
+        newItems = newItems.map(item => {
+            if (item.clientId === targetParentId) {
+                const newChildren = item.children ? [...item.children] : [];
+                const finalIndex = targetIndex !== undefined ? targetIndex : newChildren.length;
+                newChildren.splice(finalIndex, 0, { ...newItem, parentId: item.clientId });
+                return { ...item, children: newChildren };
+            }
+            if (item.children) {
+                return { ...item, children: addItemToTree(item.children, targetParentId, newItem, targetIndex) };
+            }
+            return item;
+        });
     }
+    return assignOrderRecursively(newItems); // Ensure order is always updated after add
+  };
+
+  const updateItemInTree = (currentItems: MenuItem[], updatedItemPartial: Partial<MenuItem> & { clientId: string }): MenuItem[] => {
     return currentItems.map(item => {
-        if (item.clientId === targetParentId) {
-            const newChildren = item.children ? [...item.children] : [];
-            return { ...item, children: [...newChildren, { ...newItem, parentId: item.clientId, order: newChildren.length }] };
+        if (item.clientId === updatedItemPartial.clientId) {
+            return { ...item, ...updatedItemPartial };
         }
-        return { ...item, children: item.children ? addItemToTree(item.children, targetParentId, newItem) : [] };
+        return { ...item, children: item.children ? updateItemInTree(item.children, updatedItemPartial) : [] };
     });
   };
-  const updateItemInTree = (currentItems: MenuItem[], updatedItem: Partial<MenuItem> & { clientId: string }): MenuItem[] => {
-    return currentItems.map(item => {
-        if (item.clientId === updatedItem.clientId) {
-            return { ...item, ...updatedItem };
-        }
-        return { ...item, children: item.children ? updateItemInTree(item.children, updatedItem) : [] };
-    });
-  };
-  const removeItemFromTree = (currentItems: MenuItem[], itemClientIdToDelete: string): MenuItem[] => {
-    return currentItems
-        .filter(item => item.clientId !== itemClientIdToDelete)
-        .map(item => ({ ...item, children: item.children ? removeItemFromTree(item.children, itemClientIdToDelete) : [] }));
+
+  const removeItemFromTree = (currentItems: MenuItem[], itemClientIdToDelete: string): { newItems: MenuItem[], removedItem: MenuItem | null } => {
+    let removed: MenuItem | null = null;
+    const filterRecursive = (itemsArr: MenuItem[]): MenuItem[] => {
+        return itemsArr.filter(item => {
+            if (item.clientId === itemClientIdToDelete) {
+                removed = item;
+                return false;
+            }
+            if (item.children) {
+                item.children = filterRecursive(item.children);
+            }
+            return true;
+        });
+    };
+    const newItems = filterRecursive(currentItems);
+    return { newItems, removedItem: removed };
   };
 
   // --- Modal & Form Handlers ---
-  const handleOpenModal = (itemToEdit?: MenuItem, parentIdToSet?: string | null) => { /* ... (as before) ... */
+  const handleOpenModal = (itemToEdit?: MenuItem, parentIdToSet?: string | null) => {
     setEditingItem(itemToEdit || null);
     setParentClientIdForNewItem(parentIdToSet === undefined ? null : parentIdToSet);
     itemForm.reset();
     if (itemToEdit) itemForm.setValues({ title: itemToEdit.title, url: itemToEdit.url });
     openModal();
   };
-  const handleItemFormSubmit = (values: { title: string, url: string }) => { /* ... (as before, using recursive helpers) ... */
+
+  const handleItemFormSubmit = (values: { title: string, url: string }) => {
     if (editingItem) {
       setItems(prevItems => updateItemInTree(prevItems, { ...editingItem, ...values, clientId: editingItem.clientId }));
     } else {
@@ -236,46 +261,47 @@ export default function EditMenuPage() {
     }
     closeModal();
   };
-  const handleDeleteItem = (itemToDelete: MenuItem) => { /* ... (as before) ... */
+
+  const handleDeleteItem = (itemToDelete: MenuItem) => {
     confirmModals.openConfirmModal({
       title: 'Delete Menu Item', centered: true,
       children: <Text size="sm">Delete "<strong>{itemToDelete.title}</strong>"? If it has sub-items, they will also be deleted.</Text>,
       labels: { confirm: 'Delete Item', cancel: 'Cancel' }, confirmProps: { color: 'red' },
-      onConfirm: () => setItems(prevItems => removeItemFromTree(prevItems, itemToDelete.clientId)),
+      onConfirm: () => setItems(prevItems => removeItemFromTree(prevItems, itemToDelete.clientId).newItems),
     });
   };
 
   // --- Save Handlers ---
-  const stripClientData = (menuItems: MenuItem[]): any[] => { /* ... (as before) ... */
+  const stripClientData = (menuItems: MenuItem[]): any[] => {
       return menuItems.map(({ clientId, parentId, children, ...item }) => ({
           ...item,
           children: children ? stripClientData(children) : [],
       }));
   };
-  const assignOrderRecursively = (menuItems: MenuItem[]): MenuItem[] => { /* ... (as before) ... */
+  const assignOrderRecursively = (menuItems: MenuItem[]): MenuItem[] => {
       return menuItems.map((item, index) => ({
           ...item,
           order: index,
           children: item.children ? assignOrderRecursively(item.children) : []
       }));
   };
-  const handleSaveMenu = async () => { /* ... (as before, using assignOrderRecursively then stripClientData) ... */
+  const handleSaveMenu = async () => {
     setIsLoading(true); setApiError(null);
-    const orderedItems = assignOrderRecursively(items);
-    const itemsToSave = stripClientData(orderedItems);
+    const finalItemsToSave = assignOrderRecursively(items); // Ensure order is set based on current array structure
+    const itemsToSaveForAPI = stripClientData(finalItemsToSave);
 
     try {
       const response = await fetch(`/api/admin/navigation/${menuId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: menuName, items: itemsToSave }),
+        body: JSON.stringify({ name: menuName, items: itemsToSaveForAPI }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Failed to save menu structure.');
       notifications.show({ title: 'Menu Saved', message: 'Menu structure saved successfully.', color: 'green', icon: <IconDeviceFloppy /> });
       setItems(assignClientIdsAndParent(data.items || []));
       setMenuName(data.name);
-      form.resetDirty();
+      // form.resetDirty(); // No global form here, dirtiness is implicit by DND or item edits
     } catch (err: any) {
       setApiError(err.message);
       notifications.show({ title: 'Error Saving Menu', message: err.message, color: 'red', icon: <IconAlertCircle /> });
@@ -283,86 +309,76 @@ export default function EditMenuPage() {
   };
 
   // --- DND Handlers ---
-  const findItemData = (itemId: string, itemsArray: MenuItem[]): MenuItem | null => {
-    for (const item of itemsArray) {
-      if (item.clientId === itemId) return item;
-      if (item.children) {
-        const found = findItemData(itemId, item.children);
-        if (found) return found;
-      }
-    }
-    return null;
-  };
-
   function handleDragStart(event: DragStartEvent) {
     const { active } = event;
     setActiveDragId(active.id as string);
-    setActiveDraggedItem(findItemData(active.id as string, items));
+    setActiveDraggedItem(findItemRecursive(items, active.id as string)?.item || null);
   }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     setActiveDragId(null); setActiveDraggedItem(null);
+
     if (!over || active.id === over.id) return;
 
     const activeId = active.id as string;
-    const overId = over.id as string;
+    const overId = over.id as string; // This is clientId of item hovered over, or a dropzone id
 
-    setItems((currentItems) => {
-        let newItemsTree = JSON.parse(JSON.stringify(currentItems)); // Deep clone
+    setItems(currentItems => {
+        let newTree = JSON.parse(JSON.stringify(currentItems));
 
-        const activeItemSearchResult = findItemAndParent(newItemsTree, activeId);
-        if (!activeItemSearchResult) return currentItems;
-        const { item: draggedItem } = activeItemSearchResult;
+        const removalResult = removeItemFromTree(newTree, activeId);
+        newTree = removalResult.newItems;
+        let draggedItem = removalResult.removedItem;
 
-        newItemsTree = removeItemFromTree(newItemsTree, activeId); // Remove from old position
+        if (!draggedItem) return currentItems; // Should not happen
 
-        // Determine target: over an item (potential parent) or over a sortable context (root or child list)
-        const overIsItem = findItemAndParent(newItemsTree, overId); // Check if 'over' is an item itself
+        // Determine where to drop
+        const overItemData = findItemRecursive(newTree, overId); // Is 'over' an item?
 
         let targetParentId: string | null = null;
         let targetIndex: number | undefined = undefined;
 
-        if (overIsItem) { // Dropped "onto" or "near" an existing item
-            // Option 1: Make child (if `over.data.current?.canBeParent` or similar flag)
-            // For simplicity, if dropping "onto" an item, make it the last child of that item.
-            // This requires `over.id` to be the `clientId` of the item we are dropping onto.
-            // And `over.data.current.acceptsChildren` could be a flag on the droppable.
-            // For now, this simplified example will focus on reordering within the same parent or moving to root.
-            // A more advanced check for `over.data.current.sortable.containerId` could determine if `over` is a list.
+        if (overItemData) { // Dropped on or near an existing item
+            // For this iteration, assume dropping "onto" an item makes it a child (last child)
+            // And dropping "near" (which DND kit might resolve as closest item) means reordering as sibling
+            // This needs refinement with `over.data.current` for specific drop zones or indicators
 
-            // Scenario: Reordering within the same parent list
-            targetParentId = overIsItem.parentId;
-            targetIndex = overIsItem.index; // Insert before the 'over' item in its list
+            // Simple case: If `over.id` is an item, make dragged item its last child.
+            // This is a common pattern for re-parenting.
+            // More advanced: check if dropping on top half (sibling before) or bottom half (sibling after) or center (child)
+            targetParentId = overItemData.item.clientId; // Target item becomes the parent
+            targetIndex = overItemData.item.children.length; // Add as last child
+            draggedItem.parentId = targetParentId;
+            newTree = addItemToTree(newTree, targetParentId, draggedItem, targetIndex);
 
-        } else { // Dropped into a list area (e.g., root, or potentially an empty child list area)
-            // If `over.id` corresponds to a SortableContext (e.g., a parent item's clientId if we map context IDs),
-            // then we are dropping into that parent's children list.
-            // If `over.id` doesn't match any item, it might be the root drop.
-            const potentialParentItem = findItemRecursive(newItemsTree, overId); // Is overId a parent item itself?
-            if (potentialParentItem) { // Dropped into this item's children area
-                targetParentId = potentialParentItem.clientId;
-                targetIndex = potentialParentItem.children.length; // Add as last child
-            } else { // Default: drop at root level
-                targetParentId = null;
-                // Find index if dropped near a root item, otherwise at the end
-                const rootIndex = newItemsTree.findIndex(item => item.clientId === overId);
-                targetIndex = rootIndex !== -1 ? rootIndex : newItemsTree.length;
-            }
+        } else { // Dropped on a root area (or an area not identified as an item)
+            // This could also be a specific dropzone for a sublist if `over.id` was a containerId
+            // For now, assume dropping on root if not on an item
+            draggedItem.parentId = null;
+            // Try to find index if `over.id` was a placeholder for root or a list context
+            // For simplicity, add to end of root for now if not dropped on an item
+            newTree = addItemToTree(newTree, null, draggedItem, newTree.length);
         }
-
-        draggedItem.parentId = targetParentId;
-        newItemsTree = addItemToTree(newItemsTree, targetParentId, draggedItem, targetIndex);
-
-        return assignOrderRecursively(newItemsTree);
+        return assignOrderRecursively(newTree);
     });
     notifications.show({title: "Structure Changed", message: "Remember to save your changes.", color: "orange", autoClose: 3000});
   }
 
-  const allClientIds = useCallback(() => getAllItemClientIds(items), [items]);
+  const allClientIds = useCallback(() => { // Memoize to prevent re-renders of SortableContext
+    const ids: string[] = [];
+    const collectIds = (menuItems: MenuItem[]) => {
+        for (const item of menuItems) {
+            ids.push(item.clientId);
+            if (item.children) collectIds(item.children);
+        }
+    };
+    collectIds(items);
+    return ids;
+  }, [items]);
 
 
-  if (authStatus === 'loading' || (isFetching && authStatus === 'authenticated')) { /* ... (Skeleton UI as before) ... */
+  if (authStatus === 'loading' || (isFetching && authStatus === 'authenticated')) {
     return (
         <AdminLayout>
             <Title order={2} mb="xl">Edit Menu: {menuName || "Loading..."}</Title>
@@ -398,8 +414,7 @@ export default function EditMenuPage() {
                 {items.length === 0 && !isFetching ? (
                   <Text c="dimmed" ta="center" p="xl">No items in this menu yet. Click "Add Root Item" to start.</Text>
                 ) : (
-                  // Render root items. SortableMenuItem will recursively render children with their own SortableContext.
-                  items.map(item => (
+                  items.map(item => ( // Render only root items; SortableMenuItem handles children
                     <SortableMenuItem
                         key={item.clientId}
                         item={item}
@@ -413,7 +428,7 @@ export default function EditMenuPage() {
                 )}
             </SortableContext>
             <DragOverlay dropAnimation={null}>
-                {activeDraggedItem ? <SortableMenuItem item={activeDraggedItem} onEdit={()=>{}} onDelete={()=>{}} onAddChild={()=>{}} isOverlay={true} level={0}/> : null}
+                {activeDraggedItem ? <SortableMenuItem item={activeDraggedItem} onEdit={()=>{}} onDelete={()=>{}} onAddChild={()=>{}} isOverlay={true} level={activeDraggedItem.parentId === null ? 0 : 1 /* Approximate level for overlay */} /> : null}
             </DragOverlay>
         </DndContext>
 
