@@ -8,7 +8,7 @@ import Product from '../../../../models/Product'; // For populating product deta
 import mongoose from 'mongoose';
 
 // Define allowed order statuses for validation
-const ALLOWED_ORDER_STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded', 'on-hold', 'failed', 'completed'];
+const ALLOWED_ORDER_STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded', 'on-hold', 'failed'];
 
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -73,21 +73,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           }
         }
 
-        if (trackingNumber !== undefined) { // Allow setting trackingNumber to empty string to clear it
-            if (orderToUpdate.trackingNumber !== trackingNumber) {
-               updateLog.push({ field: 'trackingNumber', oldValue: orderToUpdate.trackingNumber, newValue: trackingNumber, user: adminUserId, date: new Date() });
-               orderToUpdate.trackingNumber = trackingNumber;
-            }
+        // Example: If Order schema has `trackingNumber: String`
+        if (trackingNumber && typeof trackingNumber === 'string') {
+            // Assuming a field like orderToUpdate.shippingDetails.trackingNumber might exist
+            // For this example, let's say it's directly on the order:
+            // if (orderToUpdate.trackingNumber !== trackingNumber) { // Add trackingNumber to Order schema
+            //    updateLog.push({ field: 'trackingNumber', oldValue: orderToUpdate.trackingNumber, newValue: trackingNumber, user: adminUserId, date: new Date() });
+            //    orderToUpdate.trackingNumber = trackingNumber;
+            // }
+            console.log(`Tracking number for order ${orderId}: ${trackingNumber}`); // Placeholder
         }
 
-        if (adminNotes && typeof adminNotes === 'string' && adminNotes.trim() !== '') {
-          orderToUpdate.adminNotes = orderToUpdate.adminNotes || [];
-          const newNote = { note: adminNotes.trim(), date: new Date(), by: adminUserId };
-          orderToUpdate.adminNotes.push(newNote);
-          updateLog.push({ field: 'adminNotes', newValue: `Added note: "${adminNotes.trim()}"`, user: adminUserId, date: new Date() });
+        if (adminNotes && typeof adminNotes === 'string') {
+          // Assuming 'adminNotes' is a field in your Order schema e.g. adminNotes: [{note: String, date: Date, by: String}]
+          // For now, this part of the request body will be ignored if not in schema.
+          // If schema supports it:
+          // orderToUpdate.adminNotes = orderToUpdate.adminNotes || [];
+          // orderToUpdate.adminNotes.push({note: adminNotes, date: new Date(), by: adminUserId });
+          // updateLog.push({ field: 'adminNotes', newValue: adminNotes, user: adminUserId, date: new Date() });
+          console.log(`Admin notes for order ${orderId}: ${adminNotes}`); // Placeholder
         }
 
-        // Log changes if any were made
+        // Log changes if any were made (conceptual, would need an OrderHistory model or similar)
         if (updateLog.length > 0) {
             console.log("Order Update Log:", updateLog);
             // Here you might save these logs to an OrderHistory collection

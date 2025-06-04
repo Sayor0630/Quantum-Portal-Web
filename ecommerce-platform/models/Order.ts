@@ -49,12 +49,6 @@ export interface IOrder extends Document {
   paidAt?: Date;
   isDelivered?: boolean;
   deliveredAt?: Date;
-  trackingNumber?: string; // Added trackingNumber
-  adminNotes?: { // Added adminNotes
-    note: string;
-    date: Date;
-    by?: string;
-  }[];
   createdAt: Date; // Provided by timestamps
   updatedAt: Date; // Provided by timestamps
 }
@@ -97,12 +91,6 @@ const OrderSchema: Schema<IOrder> = new Schema(
     paidAt: { type: Date },
     isDelivered: { type: Boolean, default: false },
     deliveredAt: { type: Date },
-    trackingNumber: { type: String, trim: true, sparse: true },
-    adminNotes: [{
-        note: { type: String, required: true },
-        date: { type: Date, default: Date.now },
-        by: { type: String }
-    }],
   },
   {
     timestamps: true, // Adds createdAt and updatedAt automatically
