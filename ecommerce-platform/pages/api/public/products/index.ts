@@ -28,16 +28,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     } = req.query;
 
     const query: any = {
-        isPublished: true, // Filter by isPublished: true
+        isPublished: true, // Filter by isPublished: true for products
     };
+
+    // Fetch published category IDs
+    const publishedCategories = await Category.find({ isPublished: true }).select('_id').lean();
+    const publishedCategoryIds = publishedCategories.map(cat => cat._id);
 
     if (ids && typeof ids === 'string') {
       const idArray = ids.split(',').filter(id => mongoose.Types.ObjectId.isValid(id)).map(id => new mongoose.Types.ObjectId(id));
       if (idArray.length > 0) query._id = { $in: idArray };
     }
+
     if (categoryId && typeof categoryId === 'string' && mongoose.Types.ObjectId.isValid(categoryId)) {
-      query.category = new mongoose.Types.ObjectId(categoryId);
+      const categoryObjectId = new mongoose.Types.ObjectId(categoryId);
+      // Check if the requested categoryId is among the published ones
+      if (!publishedCategoryIds.some(id => id.equals(categoryObjectId))) {
+        // Category is not published or does not exist, return empty results
+        return res.status(200).json({
+            products: [],
+            currentPage: parseInt(page as string),
+            totalPages: 0,
+            totalItems: 0,
+        });
+      }
+      query.category = categoryObjectId;
+    } else {
+      // If no specific categoryId is requested, filter products to include only those
+      // that either have no category or belong to a published category.
+      query.$or = [
+        { category: { $exists: false } },
+        { category: null },
+        { category: { $in: publishedCategoryIds } }
+      ];
     }
+
     if (slug && typeof slug === 'string') {
         query.slug = slug; // Query by actual slug field now
     }
@@ -71,30 +96,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const products = await Product.find(query)
-      .populate('category', 'name slug isPublished') // Also select isPublished for category
+      .populate('category', 'name slug') // isPublished no longer needed here for filtering
       .select('name description price sku images category tags customAttributes slug seoTitle seoDescription isPublished')
       .sort(sortParams)
       .limit(limitNum)
       .skip((pageNum - 1) * limitNum)
       .lean();
 
-    // Filter products further if their populated category is not published (unless categoryId filter is already applied)
-    const filteredProducts = categoryId ? products : products.filter(product => {
-        if (product.category && typeof product.category !== 'string') { // Check if category is populated and is an object
-            return (product.category as any).isPublished === true;
-        }
-        return true; // If no category or category not populated with isPublished, keep product (or adjust logic)
-    });
+    // The post-query filter is no longer needed as filtering is done at DB level.
+    // const filteredProducts = categoryId ? products : products.filter(product => {
+    //     if (product.category && typeof product.category !== 'string') { // Check if category is populated and is an object
+    //         return (product.category as any).isPublished === true;
+    //     }
+    //     return true; // If no category or category not populated with isPublished, keep product (or adjust logic)
+    // });
 
-    // Note: Count should ideally reflect the post-filter count if categories are filtered this way.
-    // This is complex. For now, totalProducts might be higher than returned if categories are filtered out.
-    // A more accurate count would require a more complex aggregation or multiple queries.
-    const totalProducts = await Product.countDocuments(query);
+    const totalProducts = await Product.countDocuments(query); // This count now accurately reflects the filtering
 
     return res.status(200).json({
-        products: filteredProducts,
+        products: products, // Use products directly
         currentPage: pageNum,
-        totalPages: Math.ceil(totalProducts / limitNum), // This might be slightly off if products are filtered by category's isPublished status post-query
+        totalPages: Math.ceil(totalProducts / limitNum),
         totalItems: totalProducts,
     });
   } catch (error) {
