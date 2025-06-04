@@ -47,52 +47,30 @@ const ProductSchema: Schema<IProduct> = new Schema({
 }, { timestamps: true });
 
 ProductSchema.pre<IProduct>('save', function(next) {
-  // Helper function (assuming generateSlugFromName is defined in the file)
-  // const generateSlugFromName = (name: string): string => { ... };
-
-  // Case 1: Slug is explicitly provided and modified by the user in this save operation
-  if (this.isDirectModified('slug')) {
-    if (this.slug && this.slug.trim() !== '') {
-      // If user provided a non-empty slug, reformat it.
-      this.slug = generateSlugFromName(this.slug);
-    } else {
-      // User explicitly set slug to empty or whitespace, so regenerate from name (if name exists).
-      if (this.name) {
-        this.slug = generateSlugFromName(this.name);
-      } else {
-        // Name is also empty, so slug remains empty (or whatever schema default/validation dictates)
-        // For a 'unique sparse' slug, an empty slug is fine if name is also empty.
-        this.slug = undefined; // Or null, depending on schema preference for empty unique sparse.
+  // Only generate/update slug if name is present and slug is being modified or is empty
+  if (this.isModified('name') || !this.slug) {
+    if (this.name) { // Ensure name is present
+      const generatedSlug = generateSlugFromName(this.name);
+      // If slug is not manually set OR if the current slug is the auto-generated version of the old name
+      // (this part is tricky without storing old name, so simplify: if slug is empty or name changes and slug is not dirty)
+      if (!this.slug || (this.isModified('name') && !this.isDirectModified('slug'))) {
+         this.slug = generatedSlug;
       }
     }
   }
-  // Case 2: Slug was not explicitly modified by user, but name was, OR if product is new and slug is empty.
-  // This handles new products or updates where only name changes (intending slug to follow).
-  else if (this.isModified('name') || !this.slug) {
-    if (this.name) {
-      this.slug = generateSlugFromName(this.name);
-    } else if (!this.slug) {
-      // If name is also empty, and slug was already empty/not set, ensure it's set to undefined
-      // to respect sparse index if name is not required.
-      this.slug = undefined;
-    }
+  // Always ensure the slug is in the correct format if it exists
+  if (this.slug) {
+    this.slug = generateSlugFromName(this.slug); // Re-formats existing slug too
   }
-  // Case 3: Slug exists but wasn't directly modified (e.g. loaded from DB)
-  // and name wasn't modified, but we still want to ensure its format.
-  // This is mostly a safety net for existing slugs that might not be perfectly formatted.
-  // However, this might be redundant if slugs are always formatted on save/creation.
-  // Let's comment this out for now to avoid re-slugifying unchanged slugs unnecessarily.
-  // else if (this.slug) {
-  //   this.slug = generateSlugFromName(this.slug);
-  // }
 
-
-  // Final check: if slug is somehow still undefined/empty but name is present (e.g. new product with only name)
-  // This is somewhat redundant with Case 2 but acts as a final safety.
+  // If after all attempts, slug is still empty and name is not, try one last time.
+  // This primarily handles the create case where slug might not be provided.
   if (!this.slug && this.name) {
       this.slug = generateSlugFromName(this.name);
   }
 
+  // If slug is required in your schema (not just unique/sparse), you'd add a validation error here if it's still empty.
+  // For now, sparse:true allows it to be empty/null and still maintain uniqueness for non-null values.
   next();
 });
 
