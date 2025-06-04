@@ -215,7 +215,7 @@ export default function ProductsPage() {
       <Table.Td>${typeof product.price === 'number' ? product.price.toFixed(2) : 'N/A'}</Table.Td>
       <Table.Td>{product.stockQuantity !== undefined ? product.stockQuantity : 'N/A'}</Table.Td>
       <Table.Td>{product.category?.name || 'Uncategorized'}</Table.Td>
-      {/* <Table.Td>{product.isPublished ? <Badge color="green">Published</Badge> : <Badge color="gray">Draft</Badge>}</Table.Td> */}
+      <Table.Td>{product.isPublished ? <Badge color="green">Published</Badge> : <Badge color="gray">Draft</Badge>}</Table.Td>
       <Table.Td>
         <Group gap="xs">
           <ActionIcon variant="subtle" color="blue" component={Link} href={`/admin/products/edit/${product._id}`} aria-label={`Edit ${product.name}`}>
@@ -286,7 +286,7 @@ export default function ProductsPage() {
                          <Table.Th>Price</Table.Th>
                          <Table.Th>Stock</Table.Th>
                          <Table.Th>Category</Table.Th>
-                         {/* <Table.Th>Status</Table.Th> */}
+                         <Table.Th>Status</Table.Th>
                          <Table.Th>Actions</Table.Th>
                      </Table.Tr>
                      </Table.Thead>
