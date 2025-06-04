@@ -1,6 +1,5 @@
 import mongoose, { Document, Schema, Model } from 'mongoose';
-
-export interface IReview extends Document {
+import Product from './Product'; // Assuming Product.ts is in the same directory
   product: mongoose.Schema.Types.ObjectId;
   customer: mongoose.Schema.Types.ObjectId; // Or user ID if not using a separate Customer model initially
   rating: number;
@@ -30,6 +29,42 @@ const ReviewSchema: Schema<IReview> = new Schema({
 //   }
 //   next();
 // });
+
+// Static method to update product rating
+ReviewSchema.statics.updateProductRating = async function(productId: mongoose.Types.ObjectId) {
+  try {
+    const reviews = await this.find({ product: productId, status: 'approved' });
+    const numberOfReviews = reviews.length;
+    const averageRating = numberOfReviews > 0
+      ? reviews.reduce((acc: number, item: any) => item.rating + acc, 0) / numberOfReviews
+      : 0;
+
+    await Product.findByIdAndUpdate(productId, {
+      averageRating: parseFloat(averageRating.toFixed(2)), // Store with 2 decimal places
+      numberOfReviews: numberOfReviews,
+    });
+  } catch (error) {
+    console.error(`Error updating product rating for productId ${productId}:`, error);
+    // Decide if this error should be propagated further or just logged
+  }
+};
+
+// Hook to update product rating after a review is saved
+ReviewSchema.post<IReview>('save', async function() {
+  // 'this' refers to the review document that was saved
+  // Access the static method via this.constructor
+  await (this.constructor as any).updateProductRating(this.product);
+});
+
+// Hook to update product rating after a review is deleted
+ReviewSchema.post<IReview>('findOneAndDelete', async function(doc: IReview | null) {
+  if (doc) {
+    // 'doc' is the review document that was deleted
+    // Access the static method via doc.constructor
+    await (doc.constructor as any).updateProductRating(doc.product);
+  }
+});
+
 
 const ReviewModel: Model<IReview> = mongoose.models.Review || mongoose.model<IReview>('Review', ReviewSchema);
 

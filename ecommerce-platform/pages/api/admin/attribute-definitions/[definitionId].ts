@@ -46,6 +46,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return res.status(400).json({ message: 'If provided, values must be an array.' });
         }
 
+        // Check if renaming is attempted and if the attribute is in use
+        if (name !== undefined) {
+          const newName = String(name).trim();
+          if (newName === '') {
+            return res.status(400).json({ message: 'Attribute name cannot be empty.' });
+          }
+          const currentDefinition = await AttributeDefinition.findById(definitionObjectId).lean(); // Use lean for read-only
+          if (!currentDefinition) {
+            return res.status(404).json({ message: 'Attribute definition not found.' });
+          }
+          if (currentDefinition.name !== newName) {
+            // This is a rename attempt
+            const usageCount = await Product.countDocuments({
+              [`customAttributes.${currentDefinition.name}`]: { $exists: true }
+            });
+            if (usageCount > 0) {
+              return res.status(400).json({
+                message: `Cannot rename attribute '${currentDefinition.name}' because it is currently used by ${usageCount} product(s). Please remove its usage from products before renaming, or delete and recreate the attribute.`
+              });
+            }
+          }
+        }
+
         const updateData: any = {};
         if (name !== undefined) updateData.name = String(name).trim();
         if (values !== undefined) {

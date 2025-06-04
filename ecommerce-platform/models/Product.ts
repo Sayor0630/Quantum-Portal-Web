@@ -26,6 +26,8 @@ export interface IProduct extends Document {
   seoTitle?: string;
   seoDescription?: string;
   isPublished: boolean;
+  averageRating?: number; // Optional as it will be calculated
+  numberOfReviews?: number; // Optional as it will be calculated
   createdAt: Date;
   updatedAt: Date;
 }
@@ -44,6 +46,8 @@ const ProductSchema: Schema<IProduct> = new Schema({
   seoTitle: { type: String, trim: true, maxlength: 70 },
   seoDescription: { type: String, trim: true, maxlength: 160 },
   isPublished: { type: Boolean, default: false, index: true },
+  averageRating: { type: Number, default: 0, min: 0, max: 5 },
+  numberOfReviews: { type: Number, default: 0, min: 0 },
 }, { timestamps: true });
 
 ProductSchema.pre<IProduct>('save', function(next) {
