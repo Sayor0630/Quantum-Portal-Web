@@ -3,9 +3,10 @@
 import AdminLayout from '../../../components/admin/AdminLayout';
 import { Title, Text, Paper, Table, Group, Button, ActionIcon, LoadingOverlay, Alert, ScrollArea, Pagination, TextInput, Select, Badge, Space, Grid } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
-import { IconEye, IconAlertCircle, IconSearch, IconFilter, IconCalendarEvent } from '@tabler/icons-react'; // Changed IconCalendar to IconCalendarEvent
+import { IconEye, IconAlertCircle, IconSearch, IconFilter, IconCalendarEvent, IconPlus } from '@tabler/icons-react'; // Changed IconCalendar to IconCalendarEvent
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
+import { Role, Permission, hasPermission } from '../../../../lib/permissions';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useDebouncedValue } from '@mantine/hooks';
@@ -66,6 +67,9 @@ const ORDER_STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancel
 export default function OrdersPage() {
   const { data: session, status: authStatus } = useSession();
   const router = useRouter();
+
+  // Explicitly type the session user role or define a more specific session type
+  const userRole = session?.user?.role as Role | undefined;
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -186,7 +190,11 @@ export default function OrdersPage() {
     <AdminLayout>
       <Group justify="space-between" mb="xl">
         <Title order={2}>Orders</Title>
-        {/* <Button leftSection={<IconPlus size={16} />} component={Link} href="/admin/orders/new"> Add New Order </Button> */}
+        {userRole && hasPermission(userRole, Permission.CREATE_ORDER) && (
+          <Button leftSection={<IconPlus size={16} />} component={Link} href="/admin/orders/new">
+            Add New Order
+          </Button>
+        )}
       </Group>
 
       <Paper withBorder shadow="sm" radius="md" p="md" mb="xl">
