@@ -1,16 +1,32 @@
 import NextAuth, { AuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import AdminUser from '../../../../models/AdminUser'; // Adjust path if needed
+import AdminUser from '../../../models/AdminUser';
 import bcrypt from 'bcrypt';
-import connectToDatabase from '../../../lib/dbConnect'; // Adjust path if needed
+import connectToDatabase from '../../../lib/dbConnect';
 import { NextApiRequest, NextApiResponse } from 'next';
 
-// Define a type for the user object that authorize and jwt callbacks expect
-interface IUser extends Object {
+// Extend the built-in session and user types
+declare module "next-auth" {
+  interface Session {
+    user: {
+      id: string;
+      email: string;
+      role: string;
+    }
+  }
+  
+  interface User {
     id: string;
     email: string;
     role: string;
-    // Add other properties if your user object has them
+  }
+}
+
+declare module "next-auth/jwt" {
+  interface JWT {
+    id: string;
+    role: string;
+  }
 }
 
 export const authOptions: AuthOptions = {
@@ -24,7 +40,7 @@ export const authOptions: AuthOptions = {
         email: { label: "Email", type: "email", placeholder: "admin@example.com" },
         password: { label: "Password", type: "password" }
       },
-      async authorize(credentials): Promise<IUser | null> {
+      async authorize(credentials): Promise<any> {
         if (!credentials?.email || !credentials.password) {
           console.log("Missing credentials");
           return null;
@@ -54,7 +70,7 @@ export const authOptions: AuthOptions = {
           }
           console.log("Password valid for admin:", admin.email);
 
-          return { id: admin._id.toString(), email: admin.email, role: admin.role };
+          return { id: (admin._id as any).toString(), email: admin.email, role: admin.role };
         } catch (error) {
           console.error("Error in authorize callback:", error);
           return null;
@@ -66,9 +82,8 @@ export const authOptions: AuthOptions = {
     async jwt({ token, user }) {
       // The 'user' object here is the one returned from the authorize callback
       if (user) {
-        const typedUser = user as IUser; // Cast user to IUser
-        token.id = typedUser.id;
-        token.role = typedUser.role;
+        token.id = user.id;
+        token.role = user.role;
          // Persist these additional properties in the JWT
       }
       return token;

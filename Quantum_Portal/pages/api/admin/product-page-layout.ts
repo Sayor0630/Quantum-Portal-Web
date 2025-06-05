@@ -59,7 +59,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       // Update with incoming sections, overriding defaults where IDs match.
       for (const incomingSection of sections) {
-          finalSectionsMap.set(incomingSection.sectionId, incomingSection);
+          if (incomingSection.sectionId) {
+            finalSectionsMap.set(incomingSection.sectionId, incomingSection);
+          }
       }
 
       // Convert map back to array

@@ -1,6 +1,6 @@
 'use client';
 
-import AdminLayout from '../../../../../../components/admin/AdminLayout';
+import AdminLayout from '../../../../../components/admin/AdminLayout';
 import { Title, Paper, TextInput, Button, Group, LoadingOverlay, Alert, Switch, Textarea, Space, Text } from '@mantine/core'; // Added Text
 import { useForm, yupResolver } from '@mantine/form';
 import * as Yup from 'yup';
@@ -66,7 +66,7 @@ export default function NewStaticPage() {
   });
 
   const pageTitle = form.values.title;
-  const slugManuallySet = form.DIRTY_FIELDS.slug; // Track if slug was manually edited
+  const slugManuallySet = false; // Simplified for now
 
   useEffect(() => {
     if (pageTitle && !slugManuallySet && !form.values.slug) { // Only auto-fill if slug is empty and not manually touched

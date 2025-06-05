@@ -39,7 +39,7 @@ export default function CustomerDetailsPage() {
   const { data: session, status: authStatus } = useSession();
   const router = useRouter();
   const params = useParams();
-  const customerId = params.customerId as string;
+  const customerId = params?.customerId as string;
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [isLoading, setIsLoading] = useState(true); // For initial data load

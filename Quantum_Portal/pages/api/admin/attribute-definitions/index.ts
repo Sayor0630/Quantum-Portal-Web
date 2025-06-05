@@ -30,7 +30,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           return res.status(400).json({ message: 'Name and an array of values are required.' });
         }
         // Ensure values are strings, trimmed, non-empty, and unique (model pre-save hook also does this but good to be defensive)
-        const processedValues = [...new Set(values.map(v => String(v).trim()).filter(v => v !== ''))];
+        const processedValues = Array.from(new Set(values.map(v => String(v).trim()).filter(v => v !== '')));
 
         const newDefinition = await AttributeDefinition.create({ name: String(name).trim(), values: processedValues });
         return res.status(201).json(newDefinition);

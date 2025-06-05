@@ -2,9 +2,9 @@ import mongoose, { Document, Schema, Model } from 'mongoose';
 
 export interface IAdminUser extends Document {
   email: string;
-  password_hash: string; // In schema, use 'password'. Hashing is an application concern.
+  password?: string; // Store the hashed password - optional for delete operations
   role: string;
-  isActive: boolean; // New field
+  isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

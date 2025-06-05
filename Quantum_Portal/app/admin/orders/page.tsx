@@ -1,7 +1,7 @@
 'use client';
 
 import AdminLayout from '../../../components/admin/AdminLayout';
-import { Title, Text, Paper, Table, Group, Button, ActionIcon, LoadingOverlay, Alert, ScrollArea, Pagination, TextInput, Select, Badge, Space } from '@mantine/core';
+import { Title, Text, Paper, Table, Group, Button, ActionIcon, LoadingOverlay, Alert, ScrollArea, Pagination, TextInput, Select, Badge, Space, Grid } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { IconEye, IconAlertCircle, IconSearch, IconFilter, IconCalendarEvent } from '@tabler/icons-react'; // Changed IconCalendar to IconCalendarEvent
 import { useEffect, useState, useCallback } from 'react';
@@ -214,7 +214,7 @@ export default function OrdersPage() {
                     placeholder="From date"
                     value={dateRange[0]}
                     onChange={(date) => handleDateRangeChange([date, dateRange[1]])}
-                    icon={<IconCalendarEvent size={16} />}
+                    leftSection={<IconCalendarEvent size={16} />}
                     clearable
                     maxDate={dateRange[1] || undefined}
                     popoverProps={{ withinPortal: true }}
@@ -225,7 +225,7 @@ export default function OrdersPage() {
                     placeholder="To date"
                     value={dateRange[1]}
                     onChange={(date) => handleDateRangeChange([dateRange[0], date])}
-                    icon={<IconCalendarEvent size={16} />}
+                    leftSection={<IconCalendarEvent size={16} />}
                     clearable
                     minDate={dateRange[0] || undefined}
                     popoverProps={{ withinPortal: true }}

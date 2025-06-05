@@ -1,6 +1,6 @@
 'use client';
 
-import AdminLayout from '../../../../../components/admin/AdminLayout';
+import AdminLayout from '../../../../components/admin/AdminLayout';
 import { Title, Text, Paper, Group, Button, ActionIcon, LoadingOverlay, Alert, Accordion, List, ThemeIcon, Space, Box } from '@mantine/core';
 import { IconPencil, IconTrash, IconPlus, IconAlertCircle, IconLink, IconMenu2, IconChevronRight, IconNetwork } from '@tabler/icons-react'; // Added IconNetwork
 import { useEffect, useState, useCallback } from 'react';

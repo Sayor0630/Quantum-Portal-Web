@@ -1,12 +1,13 @@
 'use client';
 
-import AdminLayout from '../../../../../../components/admin/AdminLayout';
+import AdminLayout from '../../../../../components/admin/AdminLayout';
 import { Title, Paper, TextInput, Button, Group, LoadingOverlay, Alert, Select, Switch, Textarea, MultiSelect, Space, JsonInput, Text, Skeleton, Grid, Divider } from '@mantine/core'; // Added Skeleton, Grid, Divider
 import { useForm, yupResolver } from '@mantine/form';
 import * as Yup from 'yup';
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useParams } from 'next/navigation'; // Added useParams
+import Link from 'next/link';
 import { notifications } from '@mantine/notifications';
 import { IconDeviceFloppy, IconAlertCircle, IconX, IconArrowLeft } from '@tabler/icons-react'; // Added IconArrowLeft
 
@@ -67,7 +68,7 @@ const commonSchema = Yup.object({
 export default function EditHomepageSectionPage() {
   const router = useRouter();
   const params = useParams();
-  const sectionId = params.sectionId as string;
+  const sectionId = params?.sectionId as string;
   const { data: session, status: authStatus } = useSession();
 
   const [isLoading, setIsLoading] = useState(false); // For form submission

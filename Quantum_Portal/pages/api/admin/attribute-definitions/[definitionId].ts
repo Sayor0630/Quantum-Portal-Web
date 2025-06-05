@@ -1,9 +1,9 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../../../auth/[...nextauth]';
-import connectToDatabase from '../../../../../lib/dbConnect';
-import AttributeDefinition from '../../../../../models/AttributeDefinition';
-import Product from '../../../../../models/Product'; // To update products on definition deletion
+import { authOptions } from '../../auth/[...nextauth]';
+import connectToDatabase from '../../../../lib/dbConnect';
+import AttributeDefinition from '../../../../models/AttributeDefinition';
+import Product from '../../../../models/Product'; // To update products on definition deletion
 import mongoose from 'mongoose';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -50,7 +50,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (name !== undefined) updateData.name = String(name).trim();
         if (values !== undefined) {
           // Ensure values are strings, trimmed, non-empty, and unique (model pre-save hook also does this)
-          updateData.values = [...new Set(values.map(v => String(v).trim()).filter(v => v !== ''))];
+          updateData.values = Array.from(new Set(values.map((v: any) => String(v).trim()).filter((v: string) => v !== '')));
         }
 
         const updatedDefinition = await AttributeDefinition.findByIdAndUpdate(

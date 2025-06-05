@@ -1,9 +1,9 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../../../auth/[...nextauth]';
-import connectToDatabase from '../../../../../lib/dbConnect';
-import Category from '../../../../../models/Category';
-import Product from '../../../../../models/Product';
+import { authOptions } from '../../auth/[...nextauth]';
+import connectToDatabase from '../../../../lib/dbConnect';
+import Category from '../../../../models/Category';
+import Product from '../../../../models/Product';
 import mongoose from 'mongoose';
 
 const generateSlug = (name: string) => {
@@ -78,7 +78,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                     return res.status(404).json({ message: 'New parent category not found.' });
                  }
                  // Check for cyclical parenting: new parent cannot be a child of current category
-                 const childrenIds = currentCategory.children.map(c => c.toString());
+                 const childrenIds = currentCategory.children.map((c: any) => c.toString());
                  if (childrenIds.includes(newParentId)) {
                      return res.status(400).json({ message: 'Cyclical parenting: New parent cannot be a child of this category.' });
                  }

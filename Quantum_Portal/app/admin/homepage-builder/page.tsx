@@ -1,6 +1,6 @@
 'use client';
 
-import AdminLayout from '../../../../components/admin/AdminLayout';
+import AdminLayout from '../../../components/admin/AdminLayout';
 import { Title, Text, Paper, Button, Group, LoadingOverlay, Alert, Space, Switch, ThemeIcon, ActionIcon, Badge, Box } from '@mantine/core'; // Added Box
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
@@ -91,7 +91,6 @@ function SortableSectionItem({
                  onLabel={<IconEye size={14} />}
                  offLabel={<IconEyeOff size={14} />}
                  disabled={isSavingVisibility || isDeleting}
-                 loading={isSavingVisibility}
                  size="md"
              />
              <Button size="xs" variant="light" leftSection={<IconPencil size={14}/>} component={Link} href={`/admin/homepage-builder/edit/${section._id}`} disabled={isSavingVisibility || isDeleting}>Edit Content</Button>
@@ -117,7 +116,8 @@ export default function HomepageBuilderPage() {
 
 
   const sensors = useSensors(
-     useSensor(PointerSensor), TouchSensor,
+     useSensor(PointerSensor), 
+     useSensor(TouchSensor),
      useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
@@ -279,7 +279,6 @@ export default function HomepageBuilderPage() {
                          {sections.map((section) => (
                              <SortableSectionItem
                                  key={section._id}
-                                 id={section._id}
                                  section={section}
                                  onVisibilityToggle={handleVisibilityToggle}
                                  onEdit={() => router.push(`/admin/homepage-builder/edit/${section._id}`)}
@@ -291,7 +290,7 @@ export default function HomepageBuilderPage() {
                      </Box>
                  </SortableContext>
                  <DragOverlay dropAnimation={null}>
-                    {draggedSection ? <SortableSectionItem id={draggedSection._id} section={draggedSection} onVisibilityToggle={() => {}} onEdit={() => {}} onDelete={() => {}} isSavingVisibility={false} isDeleting={false} /> : null}
+                    {draggedSection ? <SortableSectionItem section={draggedSection} onVisibilityToggle={() => {}} onEdit={() => {}} onDelete={() => {}} isSavingVisibility={false} isDeleting={false} /> : null}
                  </DragOverlay>
              </DndContext>
          )}

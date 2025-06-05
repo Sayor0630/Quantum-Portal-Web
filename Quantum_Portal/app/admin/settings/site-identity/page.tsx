@@ -1,7 +1,7 @@
 'use client';
 
 import AdminLayout from '../../../../components/admin/AdminLayout';
-import { Title, Text, Paper, TextInput, Button, Group, LoadingOverlay, Alert, Space, ColorInput, SimpleGrid, Divider, ThemeIcon } from '@mantine/core'; // Added ThemeIcon
+import { Title, Text, Paper, TextInput, Button, Group, LoadingOverlay, Alert, Space, ColorInput, SimpleGrid, Divider, ThemeIcon, Grid } from '@mantine/core'; // Added ThemeIcon
 import { useForm, yupResolver } from '@mantine/form';
 import * as Yup from 'yup';
 import { useState, useEffect, useCallback } from 'react';
@@ -89,7 +89,11 @@ export default function SiteIdentitySettingsPage() {
         ...data,
         logoUrl: data.logoUrl || '',
         faviconUrl: data.faviconUrl || '',
-        themeSettings: data.themeSettings || form.initialValues.themeSettings, // Ensure themeSettings exist
+        themeSettings: data.themeSettings || {
+          primaryColor: '#228be6',
+          secondaryColor: '#495057',
+          fontFamily: 'Inter, sans-serif'
+        },
       });
     } catch (err: any) {
       setApiError(err.message);

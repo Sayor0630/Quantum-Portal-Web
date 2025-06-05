@@ -18,8 +18,8 @@ const schema = Yup.object().shape({
 export default function AdminLoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get('callbackUrl') || '/admin'; // Default redirect to admin dashboard
-  const initialError = searchParams.get('error'); // Get error from URL params
+  const callbackUrl = searchParams?.get('callbackUrl') || '/admin'; // Default redirect to admin dashboard
+  const initialError = searchParams?.get('error'); // Get error from URL params
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -99,7 +99,7 @@ export default function AdminLoginPage() {
             onClose={() => {
                 setError(null);
                 // If the error came from URL, clear it from URL too to prevent re-display on manual refresh
-                if (searchParams.get('error')) {
+                if (searchParams?.get('error')) {
                     router.replace('/admin/login', { scroll: false });
                 }
             }}

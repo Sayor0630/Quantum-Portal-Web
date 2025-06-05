@@ -38,7 +38,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             ];
         }
 
-        let productQuery = Product.find(query);
+        let productQuery: any = Product.find(query);
         if (fields) {
             productQuery = productQuery.select(fields.split(',').join(' '));
         } else {

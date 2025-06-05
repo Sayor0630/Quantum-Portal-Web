@@ -16,7 +16,7 @@ const AttributeDefinitionSchema: Schema<IAttributeDefinition> = new Schema({
 AttributeDefinitionSchema.pre('save', function(next) {
  if (this.isModified('values') && this.values) {
      // Filter out empty strings and then ensure uniqueness
-     this.values = [...new Set(this.values.map(v => v.trim()).filter(v => v !== ''))];
+     this.values = Array.from(new Set(this.values.map(v => v.trim()).filter(v => v !== '')));
  }
  next();
 });

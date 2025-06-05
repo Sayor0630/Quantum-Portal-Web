@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import AdminUser from '../../../models/AdminUser'; // Adjust path if needed
+import AdminUser from '../../../models/AdminUser';
 import bcrypt from 'bcrypt';
-import connectToDatabase from '../../lib/dbConnect'; // Adjust path if needed
+import connectToDatabase from '../../../lib/dbConnect';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -52,7 +52,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Admin registration error:', error);
     // Check for duplicate key error (though findOne should catch it)
     if (error.code === 11000) {

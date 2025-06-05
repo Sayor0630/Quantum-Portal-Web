@@ -6,11 +6,12 @@ import { useForm, yupResolver } from '@mantine/form';
 import * as Yup from 'yup';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import NextLink from 'next/link';
 import { notifications } from '@mantine/notifications';
 import { useSession } from 'next-auth/react';
 import { IconDeviceFloppy, IconAlertCircle, IconX, IconArrowLeft } from '@tabler/icons-react'; // Added IconArrowLeft
 
-import { RichTextEditor, Link } from '@mantine/tiptap';
+import { RichTextEditor, Link as TipTapLink } from '@mantine/tiptap';
 import { useEditor, Editor } from '@tiptap/react'; // Imported Editor type
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -42,7 +43,7 @@ const schema = Yup.object().shape({
 export default function EditStaticPage() {
   const router = useRouter();
   const params = useParams();
-  const pageIdOrSlug = params.pageIdOrSlug as string;
+  const pageIdOrSlug = params?.pageIdOrSlug as string;
   const { data: session, status: authStatus } = useSession();
 
   const [isLoading, setIsLoading] = useState(false); // For form submission
@@ -65,16 +66,16 @@ export default function EditStaticPage() {
   });
 
   const editor = useEditor({
-    extensions: [ StarterKit, Link, Placeholder.configure({ placeholder: 'Start writing...' }) ],
+    extensions: [ StarterKit, TipTapLink, Placeholder.configure({ placeholder: 'Start writing...' }) ],
     content: form.values.content,
     onUpdate: ({ editor: currentEditor }) => { form.setFieldValue('content', currentEditor.getHTML()); },
   });
 
   const pageTitle = form.values.title;
-  const slugManuallyEdited = form.DIRTY_FIELDS.slug;
+  const slugManuallyEdited = false; // Simplified for now
 
   useEffect(() => {
-    if (pageTitle && !slugManuallyEdited && form.values.slug === generateSlug(form.values.title_before_edit || '')) {
+    if (pageTitle && !slugManuallyEdited && form.values.slug === generateSlug(originalSlug || '')) {
         // If title changes, and slug was not manually edited AND it matches the slug of the (hypothetical) original title
         // This logic is complex. Simpler: only auto-update if slug is empty or user explicitly requests.
         // For now, let's rely on the pre-validate hook in the model or more direct user action for slug changes on edit.
@@ -191,7 +192,7 @@ export default function EditStaticPage() {
   if (apiError && !isFetchingPage && !isLoading && !form.isDirty()) { // Show critical fetch error
     return (
         <AdminLayout>
-             <Group justify="space-between" mb="xl"> <Title order={2}>Edit Static Page</Title> <Button variant="outline" component={Link} href="/admin/content/static-pages" leftSection={<IconArrowLeft size={16}/>}>Back</Button></Group>
+             <Group justify="space-between" mb="xl"> <Title order={2}>Edit Static Page</Title>        <Button variant="outline" component={NextLink} href="/admin/content/static-pages" leftSection={<IconArrowLeft size={16}/>}>Back</Button></Group>
             <Alert icon={<IconAlertCircle size="1rem" />} title="Failed to load page data" color="red">{apiError}</Alert>
         </AdminLayout>
     );
@@ -202,7 +203,7 @@ export default function EditStaticPage() {
     <AdminLayout>
       <Group justify="space-between" mb="xl">
         <Title order={2}>Edit Static Page: {form.values.title || "Loading..."}</Title>
-        <Button variant="outline" component={Link} href="/admin/content/static-pages" leftSection={<IconArrowLeft size={16}/>}>
+        <Button variant="outline" component={NextLink} href="/admin/content/static-pages" leftSection={<IconArrowLeft size={16}/>}>
             Back to Pages
         </Button>
       </Group>

@@ -36,7 +36,7 @@ const schema = Yup.object().shape({
 export default function EditCategoryPage() {
   const router = useRouter();
   const params = useParams();
-  const categoryId = params.categoryId as string;
+  const categoryId = params?.categoryId as string;
   const { data: session, status: authStatus } = useSession();
 
   const [isLoading, setIsLoading] = useState(false); // For form submission
@@ -57,21 +57,17 @@ export default function EditCategoryPage() {
   });
 
   const categoryName = form.values.name;
+  const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
+  
   useEffect(() => {
-    // Auto-generate slug if:
-    // 1. Name is changed by user AND
-    // 2. Slug field is currently empty OR slug field matches the auto-generated slug of the *original* name (before edit)
-    // OR if the slug field was not manually touched by the user after name change.
-    // This is complex. Simpler: if name changes, and slug is empty, or slug was the original auto-slug, then update.
-    if (categoryName && (!form.values.slug || (originalSlug && form.values.slug === generateSlug(form.values.name_before_edit_if_tracked)) || !form.DIRTY_FIELDS.slug )) {
-        // form.values.name_before_edit_if_tracked would need to be stored if using that logic
-        // For now, only generate if slug becomes empty or was not touched while name changed
-        if (form.values.slug === '' || (form.DIRTY_FIELDS.name && !form.DIRTY_FIELDS.slug)) {
-             form.setFieldValue('slug', generateSlug(categoryName));
-        }
+    // Auto-generate slug if name exists and slug hasn't been manually edited
+    if (categoryName && !slugManuallyEdited) {
+      const newSlug = generateSlug(categoryName);
+      if (form.values.slug !== newSlug) {
+        form.setFieldValue('slug', newSlug);
+      }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryName, originalSlug, form.DIRTY_FIELDS.name, form.DIRTY_FIELDS.slug]);
+  }, [categoryName, slugManuallyEdited, form]);
 
 
   useEffect(() => {
@@ -226,7 +222,7 @@ export default function EditCategoryPage() {
           {...form.getInputProps('slug')}
            onChange={(event) => {
             form.setFieldValue('slug', generateSlug(event.currentTarget.value));
-            form.setDirty({ slug: true });
+            setSlugManuallyEdited(true);
           }}
           mb="md"
         />

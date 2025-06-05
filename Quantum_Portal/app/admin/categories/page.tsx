@@ -2,7 +2,7 @@
 
 import AdminLayout from '../../../components/admin/AdminLayout';
 import { Title, Text, Paper, Table, Group, Button, ActionIcon, LoadingOverlay, Alert, ScrollArea, Space, Badge } from '@mantine/core';
-import { IconPencil, IconTrash, IconPlus, IconAlertCircle, IconNetworkLeft } from '@tabler/icons-react';
+import { IconPencil, IconTrash, IconPlus, IconAlertCircle, IconNetwork } from '@tabler/icons-react';
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -137,7 +137,7 @@ export default function CategoriesPage() {
   const rows = displayCategories.map((category) => (
     <Table.Tr key={category._id}>
       <Table.Td style={{ paddingLeft: `${(category.level || 0) * 25 + 10}px` }}>
-         {(category.level || 0) > 0 && <IconNetworkLeft size={16} style={{ marginRight: 8, verticalAlign: 'middle', color: '#adb5bd' }} />}
+         {(category.level || 0) > 0 && <IconNetwork size={16} style={{ marginRight: 8, verticalAlign: 'middle', color: '#adb5bd' }} />}
          {category.name}
       </Table.Td>
       <Table.Td>{category.slug}</Table.Td>

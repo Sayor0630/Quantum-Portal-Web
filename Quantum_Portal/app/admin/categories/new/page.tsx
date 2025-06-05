@@ -53,15 +53,17 @@ export default function NewCategoryPage() {
 
   // Auto-generate slug from name, only if slug field hasn't been manually touched or is empty
   const categoryName = form.values.name;
-  const slugManuallySet = !!form.values.slug; // Check if slug has been set (even if to empty by user)
+  const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
 
   useEffect(() => {
-    if (categoryName && (!form.values.slug || !form.DIRTY_FIELDS.slug)) {
-        // If name changes and slug field is empty OR slug field was not manually changed by user
-        form.setFieldValue('slug', generateSlug(categoryName));
+    // Auto-generate slug if name exists and slug hasn't been manually edited
+    if (categoryName && !slugManuallyEdited) {
+      const newSlug = generateSlug(categoryName);
+      if (form.values.slug !== newSlug) {
+        form.setFieldValue('slug', newSlug);
+      }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryName, form.DIRTY_FIELDS.slug]); // form.setFieldValue removed from deps
+  }, [categoryName, slugManuallyEdited, form]);
 
   useEffect(() => {
      if (authStatus === 'unauthenticated') {
@@ -170,7 +172,7 @@ export default function NewCategoryPage() {
           {...form.getInputProps('slug')}
           onChange={(event) => {
             form.setFieldValue('slug', generateSlug(event.currentTarget.value));
-            form.setDirty({ slug: true }); // Mark as dirty if user types in slug field
+            setSlugManuallyEdited(true);
           }}
           mb="md"
         />

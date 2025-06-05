@@ -23,6 +23,7 @@ const AddressSchema: Schema = new Schema({
 
 export interface ICustomer extends Document {
   email: string;
+  password?: string; // Will store hashed password, optional for delete operations
   password_hash: string; // In schema, use 'password' for simplicity, hashing handled separately
   firstName?: string;
   lastName?: string;
@@ -55,4 +56,3 @@ const CustomerSchema: Schema<ICustomer> = new Schema({
 const CustomerModel: Model<ICustomer> = mongoose.models.Customer || mongoose.model<ICustomer>('Customer', CustomerSchema);
 
 export default CustomerModel;
-export type { IAddress, ICustomer }; // Exporting ICustomer for use in API routes too

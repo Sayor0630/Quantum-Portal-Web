@@ -2,7 +2,7 @@
 
 import AdminLayout from '../../../components/admin/AdminLayout';
 import { Title, Text, Paper, Table, Group, Button, ActionIcon, LoadingOverlay, Alert, ScrollArea, Pagination, TextInput, Select, Badge, Space } from '@mantine/core';
-import { IconEye, IconAlertCircle, IconSearch, IconFilterUser, IconUserCheck, IconUserOff } from '@tabler/icons-react'; // Removed IconUserPlus as not used on this page
+import { IconEye, IconAlertCircle, IconSearch, IconFilter, IconUserCheck, IconUserOff } from '@tabler/icons-react';
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -151,7 +151,7 @@ export default function CustomersPage() {
              <Select
                  label="Status"
                  placeholder="Filter by status"
-                 leftSection={<IconFilterUser size={16} />}
+                 leftSection={<IconFilter size={16} />}
                  data={[
                      { label: 'All Statuses', value: '' }, // Representing 'null' or no filter for status
                      { label: 'Active', value: 'active' },

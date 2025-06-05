@@ -1,11 +1,12 @@
 'use client';
 
 import AdminLayout from '../../../../components/admin/AdminLayout';
-import { Title, Text, Paper, Group, Button, LoadingOverlay, Alert, Select, Divider, Table, Image, Grid, Card, Badge, Space, ThemeIcon } from '@mantine/core';
+import { Title, Text, Paper, Group, Button, LoadingOverlay, Alert, Select, Divider, Table, Image, Grid, Card, Badge, Space, ThemeIcon, ScrollArea } from '@mantine/core';
 import { IconAlertCircle, IconDeviceFloppy, IconTruckDelivery, IconFileInvoice, IconUserCircle, IconMapPin, IconReceipt, IconEdit, IconArrowLeft } from '@tabler/icons-react'; // Added IconArrowLeft
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useParams } from 'next/navigation';
+import Link from 'next/link';
 import { notifications } from '@mantine/notifications';
 import dayjs from 'dayjs';
 
@@ -85,7 +86,11 @@ export default function OrderDetailsPage() {
   const { data: session, status: authStatus } = useSession();
   const router = useRouter();
   const params = useParams();
-  const orderId = params.orderId as string;
+  const orderId = params?.orderId as string;
+
+  if (!params || !orderId) {
+    return <div>Invalid order ID</div>;
+  }
 
   const [order, setOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -212,18 +217,19 @@ export default function OrderDetailsPage() {
                         <Table.Tbody>
                             {order.orderItems.map(item => {
                                 const productExists = item.product && typeof item.product !== 'string';
-                                const imageUrl = productExists && Array.isArray(item.product.images) && item.product.images.length > 0
-                                    ? (typeof item.product.images[0] === 'string' ? item.product.images[0] : (item.product.images[0] as ProductImage).url)
+                                const product = productExists ? item.product : null;
+                                const imageUrl = product && Array.isArray(product.images) && product.images.length > 0
+                                    ? (typeof product.images[0] === 'string' ? product.images[0] : (product.images[0] as ProductImage).url)
                                     : '/placeholder-image.png';
                                 return (
-                                <Table.Tr key={item._id || (productExists ? item.product._id : Math.random().toString()) }>
+                                <Table.Tr key={item._id || (product?._id ?? Math.random().toString()) }>
                                     <Table.Td>
                                         <Group gap="sm" wrap="nowrap">
-                                            <Image src={imageUrl} alt={productExists ? item.product.name : 'Product Image'} w={40} h={40} fit="contain" radius="sm" />
-                                            <Text size="sm" fw={500}>{productExists ? item.product.name : 'Product Not Found'}</Text>
+                                            <Image src={imageUrl} alt={product?.name || 'Product Image'} w={40} h={40} fit="contain" radius="sm" />
+                                            <Text size="sm" fw={500}>{product?.name || 'Product Not Found'}</Text>
                                         </Group>
                                     </Table.Td>
-                                    <Table.Td>{productExists ? item.product.sku || 'N/A' : 'N/A'}</Table.Td>
+                                    <Table.Td>{product?.sku || 'N/A'}</Table.Td>
                                     <Table.Td style={{textAlign: 'center'}}>{item.quantity}</Table.Td>
                                     <Table.Td style={{textAlign: 'right'}}>${item.price.toFixed(2)}</Table.Td>
                                     <Table.Td style={{textAlign: 'right'}}>${(item.quantity * item.price).toFixed(2)}</Table.Td>
@@ -300,7 +306,7 @@ export default function OrderDetailsPage() {
              )}
 
              {order.shippingAddress && renderAddress(order.shippingAddress, 'Shipping')}
-             {order.billingAddress && order.shippingAddress?._id !== order.billingAddress?._id && renderAddress(order.billingAddress, 'Billing')}
+             {order.billingAddress && renderAddress(order.billingAddress, 'Billing')}
              {!order.billingAddress && order.shippingAddress && renderAddress(order.shippingAddress, 'Billing (same as Shipping)')}
 
 

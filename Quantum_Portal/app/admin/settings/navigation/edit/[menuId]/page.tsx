@@ -1,7 +1,7 @@
 'use client';
 import AdminLayout from '../../../../../../components/admin/AdminLayout';
-import { Title, Text, Paper, Button, Group, LoadingOverlay, Alert, Modal, TextInput, ActionIcon, Menu, Divider, Box, Tooltip as MantineTooltip, Space } from '@mantine/core';
-import { useDisclosure, useListState } from '@mantine/hooks';
+import { Title, Text, Paper, Button, Group, LoadingOverlay, Alert, Modal, TextInput, ActionIcon, Menu, Divider, Box, Tooltip as MantineTooltip, Space, Skeleton } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 import { useForm, yupResolver } from '@mantine/form';
 import * as Yup from 'yup';
 import { useState, useEffect, useCallback } from 'react';
@@ -11,6 +11,7 @@ import { modals as confirmModals } from '@mantine/modals';
 import { IconDeviceFloppy, IconPlus, IconPencil, IconTrash, IconLink, IconGripVertical, IconChevronDown, IconChevronRight, IconAlertCircle, IconArrowLeft, IconArrowsMove } from '@tabler/icons-react';
 import { v4 as uuidv4 } from 'uuid';
 import { useSession } from 'next-auth/react';
+import Link from 'next/link';
 
 import {
   DndContext,
@@ -32,7 +33,6 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { restrictToVerticalAxis } from '@dnd-kit/modifiers'; // Removed restrictToWindowEdges for now
 
 interface MenuItem {
   _id?: string;
@@ -120,11 +120,11 @@ function SortableMenuItem({ item, onEdit, onDelete, onAddChild, level = 0, isOve
 export default function EditMenuPage() {
   const router = useRouter();
   const params = useParams();
-  const menuId = params.menuId as string;
+  const menuId = params?.menuId as string;
   const { data: session, status: authStatus } = useSession();
 
   const [menuName, setMenuName] = useState('');
-  const [items, setItems] = useListState<MenuItem>([]); // Switched to useListState for its handlers
+  const [items, setItems] = useState<MenuItem[]>([]);
 
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(true);
@@ -141,7 +141,8 @@ export default function EditMenuPage() {
   const itemForm = useForm({ initialValues: { title: '', url: '' }, validate: yupResolver(itemSchema) });
 
   const sensors = useSensors(
-    useSensor(PointerSensor), TouchSensor,
+    useSensor(PointerSensor), 
+    useSensor(TouchSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
@@ -191,16 +192,46 @@ export default function EditMenuPage() {
     return null;
   };
 
-  const addItemToTree = (currentItems: MenuItem[], targetParentId: string | null, newItem: MenuItem): MenuItem[] => {
+  const findItemAndParent = (itemsArray: MenuItem[], itemId: string, parentId: string | null = null, index: number = 0): { item: MenuItem; parentId: string | null; index: number } | null => {
+    for (let i = 0; i < itemsArray.length; i++) {
+      const item = itemsArray[i];
+      if (item.clientId === itemId) {
+        return { item, parentId, index: i };
+      }
+      if (item.children) {
+        const found = findItemAndParent(item.children, itemId, item.clientId, i);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const getAllItemClientIds = (itemsArray: MenuItem[]): string[] => {
+    const ids: string[] = [];
+    for (const item of itemsArray) {
+      ids.push(item.clientId);
+      if (item.children) {
+        ids.push(...getAllItemClientIds(item.children));
+      }
+    }
+    return ids;
+  };
+
+  const addItemToTree = (currentItems: MenuItem[], targetParentId: string | null, newItem: MenuItem, targetIndex?: number): MenuItem[] => {
     if (targetParentId === null) { // Add to root
-        return [...currentItems, { ...newItem, parentId: null, order: currentItems.length }];
+        const insertIndex = targetIndex !== undefined ? targetIndex : currentItems.length;
+        const newItems = [...currentItems];
+        newItems.splice(insertIndex, 0, { ...newItem, parentId: null, order: insertIndex });
+        return newItems;
     }
     return currentItems.map(item => {
         if (item.clientId === targetParentId) {
             const newChildren = item.children ? [...item.children] : [];
-            return { ...item, children: [...newChildren, { ...newItem, parentId: item.clientId, order: newChildren.length }] };
+            const insertIndex = targetIndex !== undefined ? targetIndex : newChildren.length;
+            newChildren.splice(insertIndex, 0, { ...newItem, parentId: item.clientId, order: insertIndex });
+            return { ...item, children: newChildren };
         }
-        return { ...item, children: item.children ? addItemToTree(item.children, targetParentId, newItem) : [] };
+        return { ...item, children: item.children ? addItemToTree(item.children, targetParentId, newItem, targetIndex) : [] };
     });
   };
   const updateItemInTree = (currentItems: MenuItem[], updatedItem: Partial<MenuItem> & { clientId: string }): MenuItem[] => {
@@ -275,7 +306,7 @@ export default function EditMenuPage() {
       notifications.show({ title: 'Menu Saved', message: 'Menu structure saved successfully.', color: 'green', icon: <IconDeviceFloppy /> });
       setItems(assignClientIdsAndParent(data.items || []));
       setMenuName(data.name);
-      form.resetDirty();
+      // Note: form.resetDirty() would be called here if we had form dirty tracking
     } catch (err: any) {
       setApiError(err.message);
       notifications.show({ title: 'Error Saving Menu', message: err.message, color: 'red', icon: <IconAlertCircle /> });
@@ -346,7 +377,7 @@ export default function EditMenuPage() {
             } else { // Default: drop at root level
                 targetParentId = null;
                 // Find index if dropped near a root item, otherwise at the end
-                const rootIndex = newItemsTree.findIndex(item => item.clientId === overId);
+                const rootIndex = newItemsTree.findIndex((item: MenuItem) => item.clientId === overId);
                 targetIndex = rootIndex !== -1 ? rootIndex : newItemsTree.length;
             }
         }
@@ -393,7 +424,7 @@ export default function EditMenuPage() {
           <Button onClick={() => handleOpenModal(undefined, null)} leftSection={<IconPlus size={16}/>} variant="light">Add Root Item</Button>
         </Group>
 
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd} modifiers={[restrictToVerticalAxis]}>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
             <SortableContext items={allClientIds()} strategy={verticalListSortingStrategy}>
                 {items.length === 0 && !isFetching ? (
                   <Text c="dimmed" ta="center" p="xl">No items in this menu yet. Click "Add Root Item" to start.</Text>

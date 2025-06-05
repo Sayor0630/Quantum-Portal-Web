@@ -282,7 +282,6 @@ export default function AdminDashboardPage() {
                 size="xs"
                 style={{ width: 100 }}
                 disabled={popularProductsLoading}
-                allowDeselect={false}
             />
         </Group>
         <Box style={{ position: 'relative' }}>

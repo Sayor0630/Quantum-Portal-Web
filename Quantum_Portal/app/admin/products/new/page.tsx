@@ -241,7 +241,7 @@ export default function NewProductPage() {
         <TextInput label="Product Name" placeholder="e.g., Awesome T-Shirt" required {...form.getInputProps('name')} mb="md" />
         <Textarea label="Description" placeholder="Detailed description..." required autosize minRows={4} {...form.getInputProps('description')} mb="md" />
         <Group grow mb="md">
-            <NumberInput label="Price" placeholder="0.00" required precision={2} step={0.01} min={0} leftSection="$" {...form.getInputProps('price')} />
+            <NumberInput label="Price" placeholder="0.00" required decimalScale={2} step={0.01} min={0} leftSection="$" {...form.getInputProps('price')} />
             <TextInput label="SKU" placeholder="e.g., TSHIRT-BLK-LG" required {...form.getInputProps('sku')} />
         </Group>
         <NumberInput label="Stock Quantity" placeholder="0" required min={0} step={1} allowDecimal={false} {...form.getInputProps('stockQuantity')} mb="md" />
@@ -266,7 +266,7 @@ export default function NewProductPage() {
         </Grid>
 
         <Title order={4} mt="lg" mb="sm">Product Images</Title>
-        <FileInput label="Upload Images" placeholder="Click to select images" multiple accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleFileSelectAndUpload} disabled={isUploading || isLoading} mb="md" value={selectedFiles} clearable onClear={() => setSelectedFiles([])} />
+        <FileInput label="Upload Images" placeholder="Click to select images" multiple accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleFileSelectAndUpload} disabled={isUploading || isLoading} mb="md" value={selectedFiles} clearable />
         {isUploading && <Progress value={100} striped animated mb="md" />}
         {uploadError && (<Alert color="red" title="Upload Error" icon={<IconAlertCircle />} withCloseButton onClose={() => setUploadError(null)} mb="md">{uploadError}</Alert>)}
         {uploadedImages.length > 0 && (<Text size="sm" mb="xs" mt="md">Uploaded Images (preview):</Text>)}

@@ -1,10 +1,10 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../../../auth/[...nextauth]';
-import connectToDatabase from '../../../../../lib/dbConnect';
-import Review from '../../../../../models/Review';
-import Product from '../../../../../models/Product'; // For populating
-import Customer from '../../../../../models/Customer'; // For populating
+import { authOptions } from '../../auth/[...nextauth]';
+import connectToDatabase from '../../../../lib/dbConnect';
+import Review from '../../../../models/Review';
+import Product from '../../../../models/Product'; // For populating
+import Customer from '../../../../models/Customer'; // For populating
 import mongoose from 'mongoose';
 
 const ALLOWED_REVIEW_STATUSES = ['pending', 'approved', 'rejected'];

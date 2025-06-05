@@ -1,6 +1,6 @@
 'use client';
 
-import AdminLayout from '../../../../../components/admin/AdminLayout';
+import AdminLayout from '../../../../components/admin/AdminLayout';
 import { Title, Paper, TextInput, Button, Group, LoadingOverlay, Alert, Select, Switch, Space, Text, PasswordInput } from '@mantine/core'; // Added PasswordInput, Text
 import { useForm, yupResolver } from '@mantine/form';
 import * as Yup from 'yup';

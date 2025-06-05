@@ -18,7 +18,7 @@ interface CustomAttribute {
 export default function EditCustomAttributePage() {
   const router = useRouter();
   const params = useParams();
-  const attributeId = params.attributeId as string; // Get ID from URL
+  const attributeId = params?.attributeId as string; // Get ID from URL
   const { data: session, status: sessionStatus } = useSession();
 
   const [isLoading, setIsLoading] = useState(false);

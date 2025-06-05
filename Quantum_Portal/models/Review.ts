@@ -34,4 +34,3 @@ const ReviewSchema: Schema<IReview> = new Schema({
 const ReviewModel: Model<IReview> = mongoose.models.Review || mongoose.model<IReview>('Review', ReviewSchema);
 
 export default ReviewModel;
-export type { IReview }; // Exporting IReview for use in API routes
