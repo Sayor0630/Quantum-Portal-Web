@@ -53,14 +53,13 @@ export default function NewCategoryPage() {
     validate: yupResolver(schema),
   });
 
+  const categoryName = form.values.name;
   const [isSlugManuallySet, setIsSlugManuallySet] = useState(false);
 
-  const categoryName = form.values.name;
   useEffect(() => {
     if (categoryName && (!form.values.slug || !isSlugManuallySet)) {
         form.setFieldValue('slug', generateSlugFromName(categoryName));
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categoryName, isSlugManuallySet]);
 
   useEffect(() => {

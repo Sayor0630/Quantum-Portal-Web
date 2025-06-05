@@ -76,8 +76,7 @@ export default function EditProductPage() {
   const [isFetchingProduct, setIsFetchingProduct] = useState(true);
   const [isMetaLoading, setIsMetaLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
-
-  const [originalProductName, setOriginalProductName] = useState(''); // To help with slug logic
+  const [isSlugManuallyModified, setIsSlugManuallyModified] = useState(false);
 
   const [categoriesList, setCategoriesList] = useState<CategoryData[]>([]);
   const [attributeDefinitions, setAttributeDefinitions] = useState<AttributeDefinition[]>([]);
@@ -107,18 +106,15 @@ export default function EditProductPage() {
   });
 
   // Slug auto-generation logic for edit page
-  const currentName = form.values.name;
-  const currentSlug = form.values.slug;
-
+  const productNameForSlug = form.values.name;
+  
   useEffect(() => {
-    if (currentName && !form.isDirty('slug')) { // If name changes and slug hasn't been manually touched
-        if (generateSlugFromName(originalProductName) === currentSlug || currentSlug === '') {
-            // If current slug was the auto-slug of original name, or if slug is now empty, regenerate
-            form.setFieldValue('slug', generateSlugFromName(currentName));
-        }
+    if (productNameForSlug && !isSlugManuallyModified) {
+        // Auto-generate slug from current name if slug field hasn't been manually modified
+        form.setFieldValue('slug', generateSlugFromName(productNameForSlug));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentName, originalProductName]); // form.setFieldValue removed, form.DIRTY_FIELDS.slug removed as it causes issues here
+  }, [productNameForSlug, isSlugManuallyModified]);
 
 
   useEffect(() => {
@@ -165,9 +161,9 @@ export default function EditProductPage() {
                     seoDescription: productData.seoDescription || '',
                     isPublished: productData.isPublished || false, // Populate isPublished
                 });
-                setOriginalProductName(productData.name); // Store original name for slug logic
                 setUploadedImages(productData.images?.map((url: string, index: number) => ({ url, public_id: `existing_image_${productId}_${index}` })) || []);
                 form.resetDirty();
+                setIsSlugManuallyModified(false); // Reset manual modification flag
             } catch (err: any) {
                 setApiError(err.message);
                 notifications.show({ title: 'Error', message: `Failed to load product: ${err.message}`, color: 'red' });
@@ -176,7 +172,7 @@ export default function EditProductPage() {
         fetchProductData();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productId, authStatus, form]); // Added form
+  }, [productId, authStatus]);
 
   const handleFileSelectAndUpload = async (files: File[]) => { /* ... (image upload logic remains same) ... */
     if (!files || files.length === 0) return;
@@ -233,7 +229,6 @@ export default function EditProductPage() {
       notifications.show({ title: 'Product Updated', message: `Product "${data.name}" updated.`, color: 'green', icon: <IconDeviceFloppy /> });
       form.resetDirty(data);
       setUploadedImages(data.images?.map((url: string, index: number) => ({ url, public_id: uploadedImages.find(u => u.url === url)?.public_id || `existing_image_${productId}_${index}`})) || []);
-      setOriginalProductName(data.name); // Update original name after successful save
     } catch (err: any) {
       setApiError(err.message || 'An unexpected error occurred.');
       notifications.show({ title: 'Error Updating Product', message: err.message || 'An unexpected error occurred.', color: 'red', icon: <IconAlertCircle /> });
@@ -275,10 +270,15 @@ export default function EditProductPage() {
         {apiError && !isLoading && ( <Alert icon={<IconAlertCircle size="1rem" />} title="Error!" color="red" withCloseButton onClose={() => setApiError(null)} mb="md">{apiError}</Alert> )}
 
         <TextInput label="Product Name" placeholder="e.g., Awesome T-Shirt" required {...form.getInputProps('name')} mb="sm" />
-        <TextInput label="Slug" placeholder="e.g., awesome-t-shirt" required description="URL-friendly identifier. Auto-updates if name changes and slug was not manually set, or customize it." {...form.getInputProps('slug')}
+        <TextInput label="Slug" placeholder="e.g., awesome-t-shirt" required description="URL-friendly identifier. Auto-updates from name if not manually changed, or customize it." 
+            {...form.getInputProps('slug')}
             onChange={(event) => {
+                // Update the slug value
                 form.setFieldValue('slug', generateSlugFromName(event.currentTarget.value));
-                form.setDirty({slug: true});
+                // Mark as manually modified only if user is actually typing (not programmatic)
+                if (document.activeElement === event.currentTarget) {
+                    setIsSlugManuallyModified(true);
+                }
             }}
             mb="md" />
         <Textarea label="Description" placeholder="Detailed description..." required autosize minRows={3} {...form.getInputProps('description')} mb="md" />

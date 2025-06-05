@@ -67,14 +67,14 @@ export default function NewStaticPage() {
 
   const [isSlugManuallySet, setIsSlugManuallySet] = useState(false);
 
+  // Slug auto-generation logic using product pattern
   const pageTitle = form.values.title;
 
   useEffect(() => {
-    if (pageTitle && !isSlugManuallySet && !form.values.slug) { // Only auto-fill if slug is empty and not manually touched
-        form.setFieldValue('slug', generateSlug(pageTitle));
+    if (pageTitle && (!form.values.slug || !isSlugManuallySet)) {
+      form.setFieldValue('slug', generateSlug(pageTitle));
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageTitle, isSlugManuallySet]); // form.setFieldValue removed
+  }, [pageTitle, isSlugManuallySet]);
 
   useEffect(() => {
      if (authStatus === 'unauthenticated') router.replace('/admin/login');
@@ -138,9 +138,9 @@ export default function NewStaticPage() {
             required
             description="URL-friendly identifier. Auto-generated from title, or customize it."
             {...form.getInputProps('slug')}
-            onChange={(event) => { // Allow manual editing and re-format
+            onChange={(event) => {
                 form.setFieldValue('slug', generateSlug(event.currentTarget.value));
-                setIsSlugManuallySet(true);
+                if (document.activeElement === event.currentTarget) setIsSlugManuallySet(true);
             }}
             mb="md"
         />

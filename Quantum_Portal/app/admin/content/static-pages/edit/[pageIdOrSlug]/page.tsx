@@ -51,6 +51,7 @@ export default function EditStaticPage() {
   const [apiError, setApiError] = useState<string | null>(null);
   const [fetchedPageId, setFetchedPageId] = useState<string | null>(null); // Store actual _id
   const [originalSlug, setOriginalSlug] = useState('');
+  const [isSlugManuallySet, setIsSlugManuallySet] = useState(false);
 
 
   const form = useForm<Omit<StaticPageData, '_id'>>({ // Omit _id from form values type if not directly managed by form
@@ -71,11 +72,13 @@ export default function EditStaticPage() {
     onUpdate: ({ editor: currentEditor }) => { form.setFieldValue('content', currentEditor.getHTML()); },
   });
 
-  const pageTitle = form.values.title;
-
-  // Simplified slug auto-generation logic for edit page
-  // We don't auto-update slug on edit to avoid breaking existing URLs
-  // Users can manually update if needed
+  // Auto-generate slug from title
+  useEffect(() => {
+    const titleValue = form.values.title;
+    if (titleValue && (!form.values.slug || !isSlugManuallySet)) {
+      form.setFieldValue('slug', generateSlug(titleValue));
+    }
+  }, [form.values.title, form.values.slug, isSlugManuallySet]);
 
 
   useEffect(() => {
@@ -204,7 +207,7 @@ export default function EditStaticPage() {
         <TextInput label="Slug" placeholder="e.g., about-us" required description="URL-friendly identifier. Manually edit or clear to auto-generate from title." {...form.getInputProps('slug')}
             onChange={(event) => {
                 form.setFieldValue('slug', generateSlug(event.currentTarget.value));
-                form.setDirty({slug: true});
+                setIsSlugManuallySet(true);
             }}
             mb="md" />
 

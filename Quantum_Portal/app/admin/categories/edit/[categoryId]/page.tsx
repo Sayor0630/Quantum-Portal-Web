@@ -4,7 +4,7 @@ import AdminLayout from '../../../../../components/admin/AdminLayout';
 import { Title, Paper, TextInput, Button, Group, LoadingOverlay, Alert, Select, Space, Text, Skeleton, Grid, Switch } from '@mantine/core'; // Added Switch
 import { useForm, yupResolver } from '@mantine/form';
 import * as Yup from 'yup';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { IconDeviceFloppy, IconAlertCircle, IconX, IconArrowLeft } from '@tabler/icons-react'; // Added IconArrowLeft
@@ -48,7 +48,7 @@ export default function EditCategoryPage() {
   const [apiError, setApiError] = useState<string | null>(null);
   const [categoriesForSelect, setCategoriesForSelect] = useState<CategoryOption[]>([]);
   const [isCategoriesLoading, setIsCategoriesLoading] = useState(true);
-  const [originalName, setOriginalName] = useState(''); // To help with slug logic on name change
+  const [isSlugManuallySet, setIsSlugManuallySet] = useState(false);
 
   const form = useForm({
     initialValues: {
@@ -59,17 +59,13 @@ export default function EditCategoryPage() {
     },
     validate: yupResolver(schema),
   });
-
+  // Slug auto-generation logic using product edit pattern
   const currentCategoryName = form.values.name;
   useEffect(() => {
-    if (currentCategoryName && currentCategoryName !== originalName && !form.isDirty('slug')) {
-        // If name changed and slug wasn't manually touched, regenerate slug
-        form.setFieldValue('slug', generateSlugForCategory(currentCategoryName));
-    } else if (currentCategoryName && form.values.slug === '') { // If slug becomes empty, regenerate
-        form.setFieldValue('slug', generateSlugForCategory(currentCategoryName));
+    if (currentCategoryName && (!form.values.slug || !isSlugManuallySet)) {
+      form.setFieldValue('slug', generateSlugForCategory(currentCategoryName));
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentCategoryName, originalName]); // form.DIRTY_FIELDS.slug removed, form.setFieldValue removed
+  }, [currentCategoryName, isSlugManuallySet]);
 
   useEffect(() => {
      if (authStatus === 'unauthenticated') {
@@ -115,7 +111,6 @@ export default function EditCategoryPage() {
                     parent: typeof data.parent === 'string' ? data.parent : data.parent?._id || null,
                     isPublished: data.isPublished || false, // Populate isPublished
                 });
-                setOriginalName(data.name); // Store original name for slug logic
                 form.resetDirty(); // Reset dirty state after initial population
             } catch (err: any) {
                 setApiError(err.message);
@@ -155,7 +150,6 @@ export default function EditCategoryPage() {
          color: 'green',
          icon: <IconDeviceFloppy />,
       });
-      setOriginalName(data.name); // Update original name after successful save
       form.resetDirty(data); // Reset dirty state with new values
       // router.push('/admin/categories'); // Optional: redirect or stay
     } catch (err: any) {
@@ -232,7 +226,7 @@ export default function EditCategoryPage() {
           {...form.getInputProps('slug')}
            onChange={(event) => {
             form.setFieldValue('slug', generateSlugForCategory(event.currentTarget.value)); // Use renamed helper
-            form.setDirty({ slug: true });
+            setIsSlugManuallySet(true);
           }}
           mb="md"
         />

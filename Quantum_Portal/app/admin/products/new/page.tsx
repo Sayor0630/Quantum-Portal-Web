@@ -88,13 +88,15 @@ export default function NewProductPage() {
     validate: yupResolver(schema),
   });
 
+  const [isSlugManuallySet, setIsSlugManuallySet] = useState(false);
+
   const productNameForSlug = form.values.name; // Watch product name for slug generation
   useEffect(() => {
-    if (productNameForSlug && !form.isDirty('slug') && !form.values.slug) { // Only if slug is empty and not manually touched
+    if (productNameForSlug && (!form.values.slug || !isSlugManuallySet)) {
       form.setFieldValue('slug', generateSlugFromName(productNameForSlug));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productNameForSlug, form.values.slug]); // form.setFieldValue removed
+  }, [productNameForSlug, isSlugManuallySet]);
 
   useEffect(() => {
      if (authStatus === 'unauthenticated') {
@@ -225,7 +227,7 @@ export default function NewProductPage() {
             {...form.getInputProps('slug')}
             onChange={(event) => { // Allow manual editing and re-format
                 form.setFieldValue('slug', generateSlugFromName(event.currentTarget.value));
-                form.setDirty({slug: true}); // Mark as dirty if user types in slug field
+                setIsSlugManuallySet(true);
             }}
             mb="md"
         />
