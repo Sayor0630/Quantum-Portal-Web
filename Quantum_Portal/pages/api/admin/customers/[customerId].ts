@@ -1,118 +1,147 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { getServerSession } from 'next-auth/next';
+import dbConnect from '../../../../lib/dbConnect';
+import Customer, { ICustomer, IAddress } from '../../../../models/Customer'; // Import IAddress if needed for type hints
+import bcrypt from 'bcryptjs';
 import { authOptions } from '../../auth/[...nextauth]';
-import connectToDatabase from '../../../../lib/dbConnect';
-import Customer from '../../../../models/Customer';
-// Import Order model if we want to fetch order history summary later
-// import Order from '../../../../models/Order';
+import { getServerSession } from 'next-auth/next';
+import { hasPermission, Permission, Role } from '../../../../lib/permissions';
 import mongoose from 'mongoose';
 
+// Helper function to exclude password from customer object
+const sanitizeCustomer = (customer: ICustomer) => {
+    const { password, ...sanitized } = customer.toObject ? customer.toObject() : customer;
+    return sanitized;
+};
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const { query: { id }, method } = req;
+
+  if (!id || typeof id !== 'string' || !mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ success: false, message: 'Invalid customer ID.' });
+  }
+  const customerId = new mongoose.Types.ObjectId(id as string);
+
+  await dbConnect();
+
   const session = await getServerSession(req, res, authOptions);
-  if (!session) {
-    return res.status(401).json({ message: 'Unauthorized' });
+  if (!session || !session.user || !(session.user as any).role) {
+    return res.status(401).json({ success: false, message: 'Unauthorized: No valid session found' });
+  }
+  const userRole = (session.user as any).role as Role;
+  // MANAGE_CUSTOMERS permission required for all actions on a specific customer
+  if (!hasPermission(userRole, Permission.MANAGE_CUSTOMERS)) {
+    return res.status(403).json({ success: false, message: 'Forbidden: Insufficient permissions' });
   }
 
-  // Optional: Add role check here
-  // if ((session.user as { role?: string })?.role !== 'superadmin') {
-  //   return res.status(403).json({ message: 'Forbidden' });
-  // }
-
-  const { customerId } = req.query;
-
-  if (!customerId || typeof customerId !== 'string' || !mongoose.Types.ObjectId.isValid(customerId)) {
-     return res.status(400).json({ message: 'Invalid customer ID' });
-  }
-  const customerObjectId = new mongoose.Types.ObjectId(customerId as string);
-
-
-  await connectToDatabase();
-
-  switch (req.method) {
+  switch (method) {
     case 'GET':
       try {
-        const customer = await Customer.findById(customerObjectId).select('-password').lean();
-
+        const customer = await Customer.findById(customerId).select('-password').lean(); // Exclude password
         if (!customer) {
-          return res.status(404).json({ message: 'Customer not found' });
+          return res.status(404).json({ success: false, message: 'Customer not found' });
         }
-        // Example: Fetch order count or summary if needed
-        // const orderCount = await Order.countDocuments({ customer: customerObjectId });
-        // const customerData = { ...customer, orderCount }; // Add to response
-        return res.status(200).json(customer); // Or customerData
-      } catch (error) {
+        // Note: If phoneNumber was stored in a non-standard way and needs to be returned, adjust here.
+        // For now, it's not part of the core Customer model.
+        return res.status(200).json({ success: true, customer });
+      } catch (error: any) {
         console.error('Error fetching customer:', error);
-        return res.status(500).json({ message: 'Error fetching customer', error: (error as Error).message });
+        return res.status(500).json({ success: false, message: 'Internal Server Error', error: error.message });
       }
 
-    case 'PUT': // For updating customer status or other admin-editable fields
+    case 'PUT':
       try {
-        const { isActive, firstName, lastName, email, addresses } = req.body;
+        const {
+          firstName,
+          lastName,
+          email,
+          password, // Optional: only if changing
+          phoneNumber, // Received, but still not directly on Customer model's root
+          isActive,
+          addresses, // Array of IAddress compatible objects
+        } = req.body;
 
-        const customerToUpdate = await Customer.findById(customerObjectId);
+        // --- Basic Validation ---
+        if (!firstName || !lastName || !email) {
+          return res.status(400).json({ success: false, message: 'Missing required fields: firstName, lastName, and email are required.' });
+        }
+        if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return res.status(400).json({ success: false, message: 'Invalid email format.' });
+        }
+        if (password && (typeof password !== 'string' || password.length < 8)) {
+            return res.status(400).json({ success: false, message: 'Password must be at least 8 characters long, or leave blank to keep current.' });
+        }
+        if (phoneNumber && (typeof phoneNumber !== 'string' || !/^01\d{9}$/.test(phoneNumber))) {
+            return res.status(400).json({ success: false, message: 'Invalid phone number format. Must be 11 digits starting with "01" or empty.' });
+        }
+
+        const customerToUpdate = await Customer.findById(customerId);
         if (!customerToUpdate) {
-          return res.status(404).json({ message: 'Customer not found for update' });
+          return res.status(404).json({ success: false, message: 'Customer not found for update.' });
         }
 
-        let changed = false;
-
-        if (isActive !== undefined && typeof isActive === 'boolean' && customerToUpdate.isActive !== isActive) {
-          customerToUpdate.isActive = isActive;
-          changed = true;
-        }
-
-        if (firstName !== undefined && typeof firstName === 'string' && customerToUpdate.firstName !== firstName) {
-            customerToUpdate.firstName = firstName.trim();
-            changed = true;
-        }
-        if (lastName !== undefined && typeof lastName === 'string' && customerToUpdate.lastName !== lastName) {
-            customerToUpdate.lastName = lastName.trim();
-            changed = true;
-        }
-        if (email !== undefined && typeof email === 'string' && customerToUpdate.email !== email.trim().toLowerCase()) {
-          const trimmedEmail = email.trim().toLowerCase();
-          const existingCustomerByEmail = await Customer.findOne({ email: trimmedEmail, _id: { $ne: customerObjectId } });
-          if (existingCustomerByEmail) {
-              return res.status(409).json({ message: 'Another customer with this email already exists.' });
+        // --- Email Uniqueness Check (if changed) ---
+        if (email.toLowerCase() !== customerToUpdate.email.toLowerCase()) {
+          const existingCustomerWithNewEmail = await Customer.findOne({ email: email.toLowerCase() });
+          if (existingCustomerWithNewEmail) {
+            return res.status(409).json({ success: false, message: 'New email address is already in use.' });
           }
-          customerToUpdate.email = trimmedEmail;
-          changed = true;
+          customerToUpdate.email = email.toLowerCase();
         }
 
-        // Basic address update example - more robust logic might be needed for managing array of addresses
-        if (addresses !== undefined && Array.isArray(addresses)) {
-            // This replaces all addresses. Fine-grained control (add/remove/update specific address)
-            // would need a more complex handler or dedicated endpoints.
-            customerToUpdate.addresses = addresses;
-            changed = true;
+        // --- Update Fields ---
+        customerToUpdate.firstName = firstName;
+        customerToUpdate.lastName = lastName;
+        customerToUpdate.isActive = isActive !== undefined ? isActive : true;
+
+        // --- Password Update (if provided) ---
+        if (password) {
+          customerToUpdate.password = await bcrypt.hash(password, 12);
         }
 
-
-        // Do NOT allow admin to update password directly here. Password changes should have dedicated secure flows.
-        if (!changed && req.body && Object.keys(req.body).length > 0) {
-            // If body had data but nothing recognized changed, could be an issue or just no actual change needed.
-            // Return current state.
-            const currentCustomerData = customerToUpdate.toObject();
-            delete currentCustomerData.password;
-            return res.status(200).json(currentCustomerData);
+        // --- Addresses Update ---
+        const validAddresses: IAddress[] = [];
+        if (addresses && Array.isArray(addresses)) {
+            for (const addr of addresses) {
+                if (addr.street && addr.city && addr.state && addr.zipCode && addr.country) {
+                    validAddresses.push({
+                        street: addr.street,
+                        city: addr.city,
+                        state: addr.state, // Client maps 'district' to 'state'
+                        zipCode: addr.zipCode,
+                        country: addr.country,
+                        isDefaultShipping: addr.isDefaultShipping || false,
+                        isDefaultBilling: addr.isDefaultBilling || false,
+                    } as IAddress); // Cast to IAddress, assuming subdocument doesn't need .save()
+                } else {
+                     console.warn("Skipping incomplete address object during update:", addr);
+                }
+            }
         }
+        customerToUpdate.addresses = validAddresses;
+        // Note: if addresses array is empty and customer previously had addresses, they will be wiped.
+        // This is typical for "replace" style updates of sub-arrays.
 
+        await customerToUpdate.save();
 
-        const updatedCustomer = await customerToUpdate.save();
-        const responseCustomer = updatedCustomer.toObject();
-        delete responseCustomer.password; // Ensure password is not returned
+        return res.status(200).json({
+            success: true,
+            message: 'Customer updated successfully',
+            customer: sanitizeCustomer(customerToUpdate)
+        });
 
-        return res.status(200).json(responseCustomer);
-      } catch (error) {
-        if ((error as any).code === 11000 && (error as any).keyPattern?.email) {
-          return res.status(409).json({ message: 'A customer with this email already exists.' });
-        }
+      } catch (error: any) {
         console.error('Error updating customer:', error);
-        return res.status(500).json({ message: 'Error updating customer', error: (error as Error).message });
+        if (error.name === 'ValidationError') {
+          return res.status(400).json({ success: false, message: 'Validation Error: ' + error.message, errors: error.errors });
+        }
+        if (error.code === 11000) { // Should be caught by pre-check, but as a fallback
+            return res.status(409).json({ success: false, message: 'Duplicate key error (e.g. email).', field: error.keyValue ? Object.keys(error.keyValue)[0] : undefined });
+        }
+        return res.status(500).json({ success: false, message: 'Internal Server Error', error: error.message });
       }
 
     default:
       res.setHeader('Allow', ['GET', 'PUT']);
-      return res.status(405).end(`Method ${req.method} Not Allowed`);
+      return res.status(405).json({ success: false, message: `Method ${method} Not Allowed` });
   }
 }
