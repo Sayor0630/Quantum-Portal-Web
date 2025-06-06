@@ -2,10 +2,11 @@
 
 import AdminLayout from '../../../components/admin/AdminLayout';
 import { Title, Text, Paper, Table, Group, Button, ActionIcon, LoadingOverlay, Alert, ScrollArea, Pagination, TextInput, Select, Badge, Space } from '@mantine/core';
-import { IconEye, IconAlertCircle, IconSearch, IconFilter, IconUserCheck, IconUserOff } from '@tabler/icons-react'; // Removed IconUserPlus as not used on this page
+import { IconEye, IconAlertCircle, IconSearch, IconFilter, IconUserCheck, IconUserOff, IconUserPlus, IconPencil } from '@tabler/icons-react'; // Added IconPencil
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { hasPermission, Permission, Role } from '../../../lib/permissions'; // Import permission utils
 import Link from 'next/link';
 import { useDebouncedValue } from '@mantine/hooks';
 import dayjs from 'dayjs';
@@ -32,6 +33,9 @@ const getStatusColor = (isActive: boolean) => isActive ? 'green' : 'gray';
 export default function CustomersPage() {
   const { data: session, status: authStatus } = useSession();
   const router = useRouter();
+
+  const userRole = session?.user?.role as Role | undefined;
+  const canManageCustomers = userRole ? hasPermission(userRole, Permission.MANAGE_CUSTOMERS) : false;
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -126,9 +130,28 @@ export default function CustomersPage() {
          </Badge>
       </Table.Td>
       <Table.Td>
-        <ActionIcon variant="subtle" color="blue" component={Link} href={`/admin/customers/${customer._id}`} aria-label={`View customer ${customer.email}`}>
-          <IconEye size={18} />
-        </ActionIcon>
+        <Group gap="xs" wrap="nowrap">
+          <ActionIcon
+            variant="subtle"
+            color="blue"
+            component={Link}
+            href={`/admin/customers/${customer._id}`}
+            aria-label={`View customer ${customer.email}`}
+          >
+            <IconEye size={18} />
+          </ActionIcon>
+          {canManageCustomers && (
+            <ActionIcon
+              variant="subtle"
+              color="gray" // Or another color like 'orange' or 'teal'
+              component={Link}
+              href={`/admin/customers/${customer._id}/edit`}
+              aria-label={`Edit customer ${customer.email}`}
+            >
+              <IconPencil size={18} />
+            </ActionIcon>
+          )}
+        </Group>
       </Table.Td>
     </Table.Tr>
   ));
@@ -137,7 +160,11 @@ export default function CustomersPage() {
     <AdminLayout>
       <Group justify="space-between" mb="xl">
         <Title order={2}>Customers</Title>
-        {/* <Button leftSection={<IconUserPlus size={16} />} component={Link} href="/admin/customers/new"> Add New Customer </Button> */}
+        {canManageCustomers && (
+          <Button leftSection={<IconUserPlus size={16} />} component={Link} href="/admin/customers/new">
+            Add New Customer
+          </Button>
+        )}
       </Group>
 
       <Paper withBorder shadow="sm" radius="md" p="md" mb="xl">

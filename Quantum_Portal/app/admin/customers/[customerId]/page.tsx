@@ -2,10 +2,11 @@
 
 import AdminLayout from '../../../../components/admin/AdminLayout';
 import { Title, Text, Paper, Group, Button, LoadingOverlay, Alert, Divider, Grid, Card, Badge, Space, ThemeIcon, Switch } from '@mantine/core';
-import { IconAlertCircle, IconDeviceFloppy, IconUserCircle, IconMapPin, IconCalendarEvent, IconMail, IconUserCheck, IconUserOff, IconArrowLeft } from '@tabler/icons-react'; // Added IconArrowLeft
+import { IconAlertCircle, IconDeviceFloppy, IconUserCircle, IconMapPin, IconCalendarEvent, IconMail, IconUserCheck, IconUserOff, IconArrowLeft, IconPencil } from '@tabler/icons-react'; // Added IconPencil
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useParams } from 'next/navigation';
+import { hasPermission, Permission, Role } from '../../../../lib/permissions'; // Import permission utils
 import { notifications } from '@mantine/notifications';
 import dayjs from 'dayjs';
 
@@ -42,14 +43,26 @@ export default function CustomerDetailsPage() {
   const customerId = params?.customerId as string;
 
   const [customer, setCustomer] = useState<Customer | null>(null);
-  const [isLoading, setIsLoading] = useState(true); // For initial data load
-  const [isUpdating, setIsUpdating] = useState(false); // For status update
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false); // Renamed for clarity
   const [error, setError] = useState<string | null>(null);
 
   const [currentIsActive, setCurrentIsActive] = useState<boolean>(false);
 
+  const userRole = session?.user?.role as Role | undefined;
+  const canManageCustomers = userRole ? hasPermission(userRole, Permission.MANAGE_CUSTOMERS) : false;
+
+
   const fetchCustomerDetails = useCallback(async () => {
     if (!customerId || authStatus !== 'authenticated') return;
+    // Permission check before fetching
+    if (authStatus === 'authenticated' && !canManageCustomers) {
+        setError("You don't have permission to view this customer.");
+        setIsLoading(false);
+        notifications.show({ title: 'Access Denied', message: "You don't have permission to view customer details.", color: 'red'});
+        return;
+    }
+
     setIsLoading(true);
     setError(null);
     try {
@@ -58,9 +71,13 @@ export default function CustomerDetailsPage() {
         const errorData = await response.json();
         throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
       }
-      const data: Customer = await response.json();
-      setCustomer(data);
-      setCurrentIsActive(data.isActive);
+      const result = await response.json(); // API returns { success: true, customer: data }
+      if (result.success && result.customer) {
+        setCustomer(result.customer);
+        setCurrentIsActive(result.customer.isActive);
+      } else {
+        throw new Error(result.message || 'Customer data not found in response.');
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to fetch customer details.');
       setCustomer(null);
@@ -68,38 +85,47 @@ export default function CustomerDetailsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [customerId, authStatus]);
+  }, [customerId, authStatus, canManageCustomers]); // Added canManageCustomers
 
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
       router.replace('/admin/login');
-    } else if (customerId) {
+    } else if (authStatus === 'authenticated' && customerId) { // Ensure authStatus is 'authenticated'
       fetchCustomerDetails();
     }
   }, [authStatus, router, customerId, fetchCustomerDetails]);
 
-  const handleStatusUpdate = async () => {
+  const handleIsActiveToggle = async () => {
      if (customer === null || currentIsActive === customer.isActive) {
          notifications.show({ title: 'No Change', message: 'Status is already the same.', color: 'blue' });
          return;
      }
-     setIsUpdating(true);
+     setIsUpdatingStatus(true);
      setError(null);
      try {
+         // The PUT /api/admin/customers/[id] endpoint can handle isActive updates
          const response = await fetch(`/api/admin/customers/${customerId}`, {
              method: 'PUT',
              headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify({ isActive: currentIsActive }),
+             body: JSON.stringify({
+                // Send other necessary fields from customer to prevent accidental wiping if API expects full update
+                // Or ensure API can handle partial updates for just 'isActive'
+                // For now, assuming API can handle partial {isActive: boolean}
+                firstName: customer.firstName,
+                lastName: customer.lastName,
+                email: customer.email,
+                isActive: currentIsActive
+            }),
          });
-         const data = await response.json();
-         if (!response.ok) {
-             throw new Error(data.message || 'Failed to update customer status.');
+         const result = await response.json();
+         if (!response.ok || !result.success) {
+             throw new Error(result.message || 'Failed to update customer status.');
          }
-         setCustomer(data);
-         setCurrentIsActive(data.isActive);
+         setCustomer(result.customer); // API returns updated customer
+         setCurrentIsActive(result.customer.isActive);
          notifications.show({
              title: 'Status Updated',
-             message: `Customer account is now ${data.isActive ? 'Active' : 'Inactive'}.`,
+             message: `Customer account is now ${result.customer.isActive ? 'Active' : 'Inactive'}.`,
              color: 'green',
              icon: <IconDeviceFloppy />,
          });
@@ -108,28 +134,41 @@ export default function CustomerDetailsPage() {
          notifications.show({ title: 'Update Error', message: err.message, color: 'red' });
          if(customer) setCurrentIsActive(customer.isActive); // Revert UI change
      } finally {
-         setIsUpdating(false);
+         setIsUpdatingStatus(false);
      }
   };
 
-  if (authStatus === 'loading' || (isLoading && authStatus === 'authenticated')) {
+  if (authStatus === 'loading' || (isLoading && authStatus === 'authenticated' && !customer && !error) ) { // Show loading if loading, or if no customer and no error yet
      return <AdminLayout><LoadingOverlay visible={true} overlayProps={{ radius: 'sm', blur: 2, fixed: true }} /></AdminLayout>;
   }
   if (authStatus === 'unauthenticated') {
      return <Text p="xl">Redirecting to login...</Text>;
   }
-  if (error && !customer && !isLoading) {
+  // Page-level permission check after auth status is confirmed
+  if (authStatus === 'authenticated' && !canManageCustomers) {
+    return (
+        <AdminLayout>
+            <Paper p="xl">
+                <Title order={3}>Access Denied</Title>
+                <Text>You do not have permission to view customer details.</Text>
+                <Button component={Link} href="/admin" mt="md">Go to Dashboard</Button>
+            </Paper>
+        </AdminLayout>
+    );
+  }
+
+  if (error && !customer && !isLoading) { // If there was an error and no customer data could be loaded
      return (
         <AdminLayout>
-            <Group justify="space-between" mb="xl"><Title order={2}>Customer Details</Title><Button variant="outline" onClick={() => router.push('/admin/customers')} leftSection={<IconArrowLeft size={16}/>}>Back</Button></Group>
+            <Group justify="space-between" mb="xl"><Title order={2}>Customer Details</Title><Button variant="outline" component={Link} href="/admin/customers" leftSection={<IconArrowLeft size={16}/>}>Back</Button></Group>
             <Alert title="Error Loading Customer" color="red" icon={<IconAlertCircle />}>{error}</Alert>
         </AdminLayout>
     );
   }
-  if (!customer) {
+  if (!customer && !isLoading) { // If not loading, no error, but still no customer (e.g. ID was invalid but not caught, or API returned success:false without error)
      return (
         <AdminLayout>
-             <Group justify="space-between" mb="xl"><Title order={2}>Customer Details</Title><Button variant="outline" onClick={() => router.push('/admin/customers')} leftSection={<IconArrowLeft size={16}/>}>Back</Button></Group>
+             <Group justify="space-between" mb="xl"><Title order={2}>Customer Details</Title><Button variant="outline" component={Link} href="/admin/customers" leftSection={<IconArrowLeft size={16}/>}>Back</Button></Group>
             <Text p="xl" ta="center">Customer not found or still loading...</Text>
         </AdminLayout>
     );
@@ -152,18 +191,25 @@ export default function CustomerDetailsPage() {
   return (
     <AdminLayout>
       <Group justify="space-between" mb="xl">
-        <Title order={2}>Customer Details: {customer.firstName || ''} {customer.lastName || customer.email}</Title>
-        <Button variant="outline" onClick={() => router.push('/admin/customers')} leftSection={<IconArrowLeft size={16}/>}>Back to Customers</Button>
+        <Title order={2}>Customer Details: {customer?.firstName || ''} {customer?.lastName || customer?.email}</Title>
+        <Group>
+            {canManageCustomers && customerId && (
+                 <Button component={Link} href={`/admin/customers/${customerId}/edit`} leftSection={<IconPencil size={16}/>}>
+                    Edit Customer
+                </Button>
+            )}
+            <Button variant="outline" component={Link} href="/admin/customers" leftSection={<IconArrowLeft size={16}/>}>Back to Customers</Button>
+        </Group>
       </Group>
 
-      {error && !isUpdating && (
+      {error && !isUpdatingStatus && ( // Show general page error if no specific update is happening
          <Alert title="Page Error" color="red" icon={<IconAlertCircle />} withCloseButton onClose={() => setError(null)} mb="lg">
              {error}
          </Alert>
       )}
 
      <Grid gutter="lg">
-         <Grid.Col span={{ base: 12, md: 7 }}>
+         <Grid.Col span={{ base: 12, md: 7 }}> {/* Ensure customer is not null before accessing its properties */}
              <Paper withBorder shadow="sm" p="md" radius="md" mb="lg">
                  <Group gap="xs" mb="sm">
                      <ThemeIcon variant="light" size="lg" radius="md"><IconUserCircle size="1.5rem" /></ThemeIcon>
@@ -171,6 +217,8 @@ export default function CustomerDetailsPage() {
                  </Group>
                  <Text><strong>Name:</strong> {`${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'N/A'}</Text>
                  <Text><strong>Email:</strong> <a href={`mailto:${customer.email}`}>{customer.email}</a></Text>
+                 {/* Display phone number if available on customer object (not directly on model currently) */}
+                 {customer.phoneNumber && <Text><strong>Phone:</strong> {customer.phoneNumber}</Text>}
                  <Text mt="xs"><strong>Registered:</strong> {dayjs(customer.createdAt).format('MMM D, YYYY h:mm A')}</Text>
                  <Text size="xs" c="dimmed"><strong>Last Updated:</strong> {dayjs(customer.updatedAt).format('MMM D, YYYY h:mm A')}</Text>
              </Paper>
@@ -201,31 +249,36 @@ export default function CustomerDetailsPage() {
                      </div>
                  </Group>
                  <Divider my="sm" />
-                 <Switch
-                     labelPosition='left'
-                     label={currentIsActive ? "Account is Active" : "Account is Inactive"}
-                     checked={currentIsActive}
-                     onChange={(event) => setCurrentIsActive(event.currentTarget.checked)}
-                     color={currentIsActive ? "green" : "red"}
-                     size="md"
-                     disabled={isUpdating || isLoading}
-                     mb="sm"
-                     styles={{ root: { display: 'flex', justifyContent: 'space-between'}, label: { fontWeight: 500 } }}
-                 />
-                 <Button
-                     fullWidth
-                     onClick={handleStatusUpdate}
-                     loading={isUpdating}
-                     leftSection={<IconDeviceFloppy size={16}/>}
-                     disabled={customer.isActive === currentIsActive || isLoading}
-                 >
-                     Save Status Change
-                 </Button>
+                 {canManageCustomers && ( // Only show status update controls if user has permission
+                     <>
+                        <Switch
+                            labelPosition='left'
+                            label={currentIsActive ? "Account is Active" : "Account is Inactive"}
+                            checked={currentIsActive}
+                            onChange={(event) => setCurrentIsActive(event.currentTarget.checked)}
+                            color={currentIsActive ? "green" : "red"}
+                            size="md"
+                            disabled={isUpdatingStatus || isLoading}
+                            mb="sm"
+                            styles={{ root: { display: 'flex', justifyContent: 'space-between'}, label: { fontWeight: 500 } }}
+                        />
+                        <Button
+                            fullWidth
+                            onClick={handleIsActiveToggle} // Renamed handler
+                            loading={isUpdatingStatus}
+                            leftSection={<IconDeviceFloppy size={16}/>}
+                            disabled={customer.isActive === currentIsActive || isLoading}
+                        >
+                            Save Status Change
+                        </Button>
+                     </>
+                 )}
+                 {!canManageCustomers && <Text size="sm" c="dimmed">You do not have permission to change account status.</Text>}
              </Card>
              <Paper withBorder shadow="sm" p="md" radius="md">
                  <Title order={4} mb="sm">Order History (Placeholder)</Title>
                  <Text c="dimmed">Customer&apos;s order history summary will be displayed here.</Text>
-                 {/* <Button variant="outline" size="xs" mt="sm" component={Link} href={`/admin/orders?customerId=${customer._id}`}>View All Orders</Button> */}
+                 <Button variant="outline" size="xs" mt="sm" component={Link} href={`/admin/orders?customerId=${customer._id}`}>View All Orders</Button>
              </Paper>
          </Grid.Col>
      </Grid>
