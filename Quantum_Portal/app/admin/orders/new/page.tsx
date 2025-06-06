@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminLayout from '../../../../components/admin/AdminLayout';
-import { Title, Paper, TextInput, Textarea, Button, Group, Space, Text, Box, Select, LoadingOverlay, Grid, Loader, Alert } from '@mantine/core';
+import { Title, Paper, TextInput, Textarea, Button, Group, Space, Text, Box, Select, LoadingOverlay, Grid, Loader, Alert, Autocomplete, ThemeIcon } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import { useDebouncedCallback } from '@mantine/hooks';
@@ -32,14 +32,17 @@ interface ICustomerAddress {
     isDefaultBilling?: boolean;
 }
 
-// Interface for the customer data returned by the lookup API
-interface FoundCustomerData {
+// Interface for the customer data returned by the search API
+interface SearchCustomerData {
     _id: string;
-    firstName?: string;
-    lastName?: string;
+    firstName: string;
+    lastName: string;
     email: string;
-    addresses?: ICustomerAddress[];
-    // phoneNumber might not be directly on customer model, API might add it if found via other means
+    phoneNumber: string;
+    fullName: string;
+    displayText: string;
+    addresses: ICustomerAddress[];
+    isActive: boolean;
 }
 
 
@@ -48,10 +51,11 @@ export default function CreateOrderPage() {
   const [paymentMethodOptions, setPaymentMethodOptions] = useState<PaymentMethodOption[]>([]);
   const [isLoadingPaymentMethods, setIsLoadingPaymentMethods] = useState(true);
 
-  // State for customer lookup
-  const [foundCustomer, setFoundCustomer] = useState<FoundCustomerData | null>(null);
-  const [lookupLoading, setLookupLoading] = useState(false);
-  const [lookupError, setLookupError] = useState<string | null>(null);
+  // State for customer search and selection
+  const [customerSearchResults, setCustomerSearchResults] = useState<SearchCustomerData[]>([]);
+  const [selectedCustomer, setSelectedCustomer] = useState<SearchCustomerData | null>(null);
+  const [customerSearchLoading, setCustomerSearchLoading] = useState(false);
+  const [customerSearchValue, setCustomerSearchValue] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
 
 
@@ -93,51 +97,37 @@ export default function CreateOrderPage() {
     },
   });
 
-  const handleCustomerLookup = useDebouncedCallback(async (lookupValue: string, type: 'email' | 'phone') => {
-    if (!lookupValue || (type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lookupValue))) {
-      setFoundCustomer(null);
-      setLookupError(type === 'email' && lookupValue ? 'Invalid email format for lookup.' : null);
-      // Do not clear selectedCustomerId here, user might have typed then corrected
+  // Live customer search with debouncing
+  const handleCustomerSearch = useDebouncedCallback(async (searchValue: string) => {
+    if (!searchValue.trim()) {
+      setCustomerSearchResults([]);
+      setCustomerSearchLoading(false);
       return;
     }
 
-    setLookupLoading(true);
-    setLookupError(null);
-    setFoundCustomer(null);
-    // setSelectedCustomerId(null); // Clear previous selection on new lookup
+    if (searchValue.length < 3) {
+      setCustomerSearchResults([]);
+      return;
+    }
 
+    setCustomerSearchLoading(true);
     try {
-      // Currently API only supports email lookup effectively
-      if (type === 'phone') {
-        setLookupError('Phone lookup is not fully supported yet. Please use email.');
-        setLookupLoading(false);
-        return;
-      }
-
-      const response = await fetch(`/api/admin/customers/lookup?${type}=${encodeURIComponent(lookupValue)}`);
+      const response = await fetch(`/api/admin/customers/search?q=${encodeURIComponent(searchValue)}&limit=5`);
       const result = await response.json();
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          setLookupError('No customer found with this email. You can continue to create a new customer.');
-          notifications.show({ title: 'Customer Lookup', message: 'No customer found. New customer details can be entered.', color: 'blue' });
-        } else {
-          throw new Error(result.message || `API error: ${response.status}`);
-        }
-      } else if (result.success && result.data) {
-        setFoundCustomer(result.data);
-        notifications.show({ icon: <IconUserCheck size={18} />, title: 'Customer Found', message: `Details for ${result.data.firstName || ''} ${result.data.lastName || ''} loaded.`, color: 'green' });
+      if (response.ok && result.success) {
+        setCustomerSearchResults(result.data || []);
       } else {
-         // Should not happen if API is consistent
-        setLookupError('Could not retrieve customer data.');
+        console.error('Customer search failed:', result.message);
+        setCustomerSearchResults([]);
       }
     } catch (error: any) {
-      setLookupError(error.message || 'Failed to lookup customer.');
-      notifications.show({ title: 'Lookup Error', message: error.message, color: 'red', icon: <IconAlertCircle/> });
+      console.error('Customer search error:', error);
+      setCustomerSearchResults([]);
     } finally {
-      setLookupLoading(false);
+      setCustomerSearchLoading(false);
     }
-  }, 500);
+  }, 300);
 
 
   const fetchEnabledPaymentMethods = useCallback(async () => {
@@ -184,38 +174,43 @@ export default function CreateOrderPage() {
     fetchEnabledPaymentMethods();
   }, [fetchEnabledPaymentMethods]);
 
-  const handleUseCustomerDetails = () => {
-    if (foundCustomer) {
-      form.setValues({
-        ...form.values, // Preserve other form values like paymentMethod
-        fullName: `${foundCustomer.firstName || ''} ${foundCustomer.lastName || ''}`.trim(),
-        email: foundCustomer.email,
-        // phoneNumber: foundCustomer.phoneNumber || form.values.phoneNumber, // If phone was on customer model
-        selectedCustomerId: foundCustomer._id, // Store the customer ID
-      });
+  const handleUseCustomerDetails = (customer: SearchCustomerData) => {
+    form.setValues({
+      ...form.values, // Preserve other form values like paymentMethod
+      fullName: customer.fullName,
+      email: customer.email,
+      phoneNumber: customer.phoneNumber || form.values.phoneNumber,
+      selectedCustomerId: customer._id, // Store the customer ID
+    });
 
-      if (foundCustomer.addresses && foundCustomer.addresses.length > 0) {
-        // Use the first address, or try to find a default shipping address
-        const addressToUse = foundCustomer.addresses.find(addr => addr.isDefaultShipping) || foundCustomer.addresses[0];
-        if (addressToUse) {
-          form.setValues({
-            ...form.values, // Preserve again, setValues might overwrite if not careful
-            fullName: `${foundCustomer.firstName || ''} ${foundCustomer.lastName || ''}`.trim(),
-            email: foundCustomer.email,
-            selectedCustomerId: foundCustomer._id,
-            deliveryAddress: addressToUse.street,
-            city: addressToUse.city,
-            district: addressToUse.state || '', // Map state to district
-            country: addressToUse.country || 'Bangladesh', // Default if not present
-            // postalCode: addressToUse.zipCode || '', // If we add postal code to form
-          });
-        }
+    if (customer.addresses && customer.addresses.length > 0) {
+      // Use the first address, or try to find a default shipping address
+      const addressToUse = customer.addresses.find(addr => addr.isDefaultShipping) || customer.addresses[0];
+      if (addressToUse) {
+        form.setValues({
+          ...form.values, // Preserve again, setValues might overwrite if not careful
+          fullName: customer.fullName,
+          email: customer.email,
+          phoneNumber: customer.phoneNumber || form.values.phoneNumber,
+          selectedCustomerId: customer._id,
+          deliveryAddress: addressToUse.street,
+          city: addressToUse.city,
+          district: addressToUse.state || '', // Map state to district
+          country: addressToUse.country || 'Bangladesh', // Default if not present
+          // postalCode: addressToUse.zipCode || '', // If we add postal code to form
+        });
       }
-      setFoundCustomer(null); // Clear found customer after using details
-      setLookupError(null);
-      setSelectedCustomerId(foundCustomer._id); // Explicitly track selected customer
-      notifications.show({ title: 'Details Applied', message: 'Customer details have been populated into the form.', color: 'teal' });
     }
+    setSelectedCustomer(customer);
+    setSelectedCustomerId(customer._id); // Explicitly track selected customer
+    setCustomerSearchValue(customer.displayText);
+    setCustomerSearchResults([]); // Clear search results
+    notifications.show({ 
+      title: 'Details Applied', 
+      message: 'Customer details have been populated into the form.', 
+      color: 'teal',
+      icon: <IconUserCheck size={18} />
+    });
   };
 
 
@@ -258,6 +253,94 @@ export default function CreateOrderPage() {
           Customer Information
         </Title>
 
+        <Autocomplete
+          label="Customer Search"
+          placeholder="Search by name, email, or phone..."
+          value={customerSearchValue}
+          onChange={(value) => {
+            setCustomerSearchValue(value);
+            handleCustomerSearch(value);
+          }}
+          data={customerSearchResults.map(customer => customer.displayText)}
+          onOptionSubmit={(value) => {
+            const customer = customerSearchResults.find(c => c.displayText === value);
+            if (customer) {
+              handleUseCustomerDetails(customer);
+            }
+          }}
+          rightSection={customerSearchLoading ? <Loader size="xs" /> : <IconSearch size="1rem" />}
+          comboboxProps={{ withinPortal: false }}
+          maxDropdownHeight={200}
+          limit={5}
+          mb="sm"
+          description="Search for existing customers to auto-fill their details"
+        />
+
+        {/* Show selected customer info */}
+        {selectedCustomer && (
+          <Paper withBorder shadow="sm" p="md" radius="md" my="sm">
+            <Group gap="xs" mb="sm" align="center">
+              <ThemeIcon variant="light" color="green" size="lg" radius="md">
+                <IconUserCheck size="1.2rem" />
+              </ThemeIcon>
+              <div>
+                <Text fw={700} size="sm" c="green.7">
+                  Customer Selected
+                </Text>
+                <Text size="xs" c="dimmed">
+                  Details have been applied to the form
+                </Text>
+              </div>
+            </Group>
+            
+            <Group gap="xs" mb="xs">
+              <Text size="sm" fw={500}>
+                {selectedCustomer.fullName}
+              </Text>
+              <Text size="sm" c="dimmed">
+                ({selectedCustomer.email})
+              </Text>
+            </Group>
+            
+            {selectedCustomer.phoneNumber && (
+              <Text size="xs" c="dimmed" mb="xs">
+                Phone: {selectedCustomer.phoneNumber}
+              </Text>
+            )}
+            
+            {selectedCustomer.addresses && selectedCustomer.addresses.length > 0 && (
+              <Text size="xs" c="dimmed" mb="sm">
+                Address: {selectedCustomer.addresses[0].street}, {selectedCustomer.addresses[0].city}
+              </Text>
+            )}
+            
+            <Button
+              size="xs"
+              variant="outline"
+              color="red"
+              onClick={() => {
+                setSelectedCustomer(null);
+                setSelectedCustomerId(null);
+                setCustomerSearchValue('');
+                // Clear form fields that were populated from customer
+                form.setValues({
+                  ...form.values,
+                  fullName: '',
+                  email: '',
+                  phoneNumber: '',
+                  deliveryAddress: '',
+                  city: '',
+                  district: '',
+                  country: 'Bangladesh',
+                  selectedCustomerId: null,
+                });
+              }}
+            >
+              Clear Selection
+            </Button>
+          </Paper>
+        )}
+
         <TextInput
           label="Full Name"
           placeholder="Enter customer's full name"
@@ -283,42 +366,9 @@ export default function CreateOrderPage() {
               placeholder="customer@example.com"
               mb="sm"
               {...form.getInputProps('email')}
-              // Add onBlur or debounced onChange for lookup
-              // For simplicity, let's use onBlur for email to trigger lookup
-              onBlur={(event) => handleCustomerLookup(event.currentTarget.value, 'email')}
-              rightSection={lookupLoading && form.values.email ? <Loader size="xs" /> : null}
             />
           </Grid.Col>
         </Grid>
-
-        {/* Customer Lookup Results Display */}
-        {!lookupLoading && lookupError && form.values.email && (
-          <Alert icon={<IconAlertCircle size="1rem" />} color="orange" variant="light" my="xs">
-            {lookupError}
-          </Alert>
-        )}
-        {!lookupLoading && !lookupError && foundCustomer && (
-          <Paper p="xs" shadow="xs" withBorder my="xs" bg="green.0">
-            <Text size="sm" c="green.7" fw={500}>
-              Found customer: {foundCustomer.firstName || ''} {foundCustomer.lastName || ''} ({foundCustomer.email})
-            </Text>
-            {foundCustomer.addresses && foundCustomer.addresses.length > 0 && (
-                <Text size="xs" c="dimmed">
-                    Address: {foundCustomer.addresses[0].street}, {foundCustomer.addresses[0].city}
-                </Text>
-            )}
-            <Button
-              size="xs"
-              variant="light"
-              color="teal"
-              mt="xs"
-              onClick={handleUseCustomerDetails}
-              leftSection={<IconUserCheck size={14}/>}
-            >
-              Use these details
-            </Button>
-          </Paper>
-        )}
 
         <Title order={4} mt="lg" mb="md">
           Delivery Information

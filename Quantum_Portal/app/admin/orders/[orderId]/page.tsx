@@ -30,8 +30,7 @@ interface OrderItem {
     price: number;
 }
 interface Address { // Define a basic address structure
-    fullName?: string; // May or may not be present
-    fullName: string; // Added
+    fullName: string; // Required field
     phone: string; // Added
     email?: string; // Added
     street: string; // Was street1
@@ -61,6 +60,7 @@ interface Order {
     totalAmount: number;
     status: string;
     paymentStatus: 'unpaid' | 'paid'; // Added
+    paymentMethod?: string; // Added payment method
     shippingAddress: Address; // Changed to required, as per new model
     billingAddress?: Address;
     paymentDetails?: PaymentDetails; // Keep for now, though paymentStatus is primary

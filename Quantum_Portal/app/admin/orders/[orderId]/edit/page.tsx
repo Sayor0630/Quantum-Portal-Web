@@ -7,6 +7,7 @@ import { Title, Paper, TextInput, Textarea, Button, Group, Space, Text, Select, 
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import Link from 'next/link';
+import Image from 'next/image';
 import { IconArrowLeft, IconTrash, IconDeviceFloppy } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 
@@ -24,10 +25,11 @@ interface OrderItemProduct {
     _id: string;
     name: string;
     sku?: string;
+    images?: Array<{url: string}> | string[]; // Support both formats
 }
 interface OrderItem {
     _id?: string; // Existing items will have _id
-    product: OrderItemProduct | string; // string if product details not populated, or just ID
+    product?: OrderItemProduct | string | null; // string if product details not populated, or just ID
     productId: string; // Ensure we always have productId for submission
     name: string; // Denormalized name
     price: number; // Price at time of order
@@ -337,7 +339,7 @@ export default function EditOrderPage() {
           <Paper key={item._id || item.productId || index} p="sm" withBorder mb="xs" radius="sm">
             <Grid align="center">
               <Grid.Col span={1}>
-                {item.image && <Image src={item.image} alt={item.name} width={40} height={40} fit="contain" />}
+                {item.image && <Image src={item.image} alt={item.name} width={40} height={40} style={{ objectFit: 'contain' }} />}
               </Grid.Col>
               <Grid.Col span={5}>
                 <Text size="sm" fw={500}>{item.name}</Text>
@@ -351,7 +353,6 @@ export default function EditOrderPage() {
                   value={item.quantity}
                   onChange={(val) => handleItemQuantityChange(index, val ?? 1)}
                   min={1} // Assuming quantity cannot be less than 1
-                  {...form.getInputProps(`orderItems.${index}.quantity`)}
                 />
               </Grid.Col>
               <Grid.Col span={2}><Text size="sm" ta="right" fw={500}>${(item.price * item.quantity).toFixed(2)}</Text></Grid.Col>

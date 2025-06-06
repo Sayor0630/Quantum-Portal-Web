@@ -5,24 +5,34 @@ import { useRouter } from 'next/navigation';
 import AdminLayout from '../../../../components/admin/AdminLayout';
 import {
     Paper, Title, TextInput, PasswordInput, Button, Switch, Grid, Textarea,
-    Group, LoadingOverlay, Checkbox, Alert, Space
+    Group, LoadingOverlay, Checkbox, Alert, Space, Text, ActionIcon
 } from '@mantine/core';
 import { useForm, zodResolver } from '@mantine/form';
 import { z } from 'zod';
 import { notifications } from '@mantine/notifications';
-import { IconDeviceFloppy, IconX, IconAlertCircle } from '@tabler/icons-react';
+import { IconDeviceFloppy, IconX, IconAlertCircle, IconRefresh } from '@tabler/icons-react';
 import { useSession } from 'next-auth/react';
 import { hasPermission, Permission, Role } from '../../../../lib/permissions';
+
+// Helper function to generate a random password
+const generateRandomPassword = () => {
+    const length = 12;
+    const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+    let password = '';
+    for (let i = 0; i < length; i++) {
+        password += charset.charAt(Math.floor(Math.random() * charset.length));
+    }
+    return password;
+};
 
 // Validation schema using Zod
 const customerSchema = z.object({
     firstName: z.string().min(1, { message: 'First name is required' }),
-    lastName: z.string().min(1, { message: 'Last name is required' }),
-    email: z.string().email({ message: 'Invalid email address' }),
+    lastName: z.string().optional(),
+    email: z.string().email({ message: 'Invalid email address' }).optional().or(z.literal('')),
     password: z.string().min(8, { message: 'Password must be at least 8 characters long' }),
-    confirmPassword: z.string(),
-    phoneNumber: z.string().optional().refine(val => !val || (/^01\d{9}$/.test(val)), {
-        message: 'Phone number must be 11 digits starting with "01" or empty',
+    phoneNumber: z.string().min(1, { message: 'Phone number is required' }).refine(val => /^01\d{9}$/.test(val), {
+        message: 'Phone number must be 11 digits starting with "01"',
     }),
     shipping_street: z.string().optional(),
     shipping_city: z.string().optional(),
@@ -36,9 +46,6 @@ const customerSchema = z.object({
     billing_postalCode: z.string().optional(),
     billing_country: z.string().default('Bangladesh'),
     isActive: z.boolean().default(true),
-}).refine(data => data.password === data.confirmPassword, {
-    message: "Passwords don't match",
-    path: ['confirmPassword'], // path of error
 });
 
 
@@ -48,13 +55,23 @@ export default function CreateCustomerPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // Function to handle generate random password
+  const handleGeneratePassword = () => {
+    const newPassword = generateRandomPassword();
+    form.setFieldValue('password', newPassword);
+    notifications.show({
+      title: 'Password Generated',
+      message: 'A random password has been generated and filled in the password field.',
+      color: 'blue',
+    });
+  };
+
   const form = useForm({
     initialValues: {
       firstName: '',
       lastName: '',
       email: '',
       password: '',
-      confirmPassword: '',
       phoneNumber: '',
       shipping_street: '',
       shipping_city: '',
@@ -72,7 +89,7 @@ export default function CreateCustomerPage() {
     validate: zodResolver(customerSchema),
   });
 
-  const userRole = session?.user?.role as Role | undefined;
+  const userRole = (session?.user as any)?.role as Role | undefined;
   const canManageCustomers = userRole ? hasPermission(userRole, Permission.MANAGE_CUSTOMERS) : false;
 
   useEffect(() => {
@@ -137,20 +154,26 @@ export default function CreateCustomerPage() {
     }
 
 
-    console.log('Submitting payload (simulated):', payload);
-    // Simulate API Call
+    console.log('Submitting payload:', payload);
+    
     try {
-        // const response = await fetch('/api/admin/customers/create', {
-        //     method: 'POST',
-        //     headers: { 'Content-Type': 'application/json' },
-        //     body: JSON.stringify(payload),
-        // });
-        // const result = await response.json();
-        // if (!response.ok || !result.success) {
-        //     throw new Error(result.message || 'Failed to create customer.');
-        // }
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate delay
-        notifications.show({ title: 'Customer Created (Simulated)', message: `Customer ${payload.firstName} ${payload.lastName} created.`, color: 'green', icon: <IconDeviceFloppy/> });
+        const response = await fetch('/api/admin/customers/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const result = await response.json();
+        
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || 'Failed to create customer.');
+        }
+        
+        notifications.show({ 
+            title: 'Customer Created', 
+            message: `Customer ${payload.firstName} ${payload.lastName || ''} created successfully.`, 
+            color: 'green', 
+            icon: <IconDeviceFloppy/> 
+        });
         router.push('/admin/customers');
     } catch (error: any) {
         setSubmitError(error.message);
@@ -177,15 +200,27 @@ export default function CreateCustomerPage() {
         <Title order={4} mb="md">Personal Information</Title>
         <Grid>
           <Grid.Col span={{ base: 12, md: 6 }}><TextInput label="First Name" required {...form.getInputProps('firstName')} /></Grid.Col>
-          <Grid.Col span={{ base: 12, md: 6 }}><TextInput label="Last Name" required {...form.getInputProps('lastName')} /></Grid.Col>
-          <Grid.Col span={{ base: 12, md: 6 }}><TextInput label="Email" required type="email" {...form.getInputProps('email')} /></Grid.Col>
-          <Grid.Col span={{ base: 12, md: 6 }}><TextInput label="Phone Number (Optional)" placeholder="01xxxxxxxxx" {...form.getInputProps('phoneNumber')} /></Grid.Col>
+          <Grid.Col span={{ base: 12, md: 6 }}><TextInput label="Last Name" {...form.getInputProps('lastName')} /></Grid.Col>
+          <Grid.Col span={{ base: 12, md: 6 }}><TextInput label="Email" type="email" {...form.getInputProps('email')} /></Grid.Col>
+          <Grid.Col span={{ base: 12, md: 6 }}><TextInput label="Phone Number" required placeholder="01xxxxxxxxx" {...form.getInputProps('phoneNumber')} /></Grid.Col>
         </Grid>
 
         <Title order={4} mt="lg" mb="md">Credentials</Title>
         <Grid>
-          <Grid.Col span={{ base: 12, md: 6 }}><PasswordInput label="Password" required {...form.getInputProps('password')} /></Grid.Col>
-          <Grid.Col span={{ base: 12, md: 6 }}><PasswordInput label="Confirm Password" required {...form.getInputProps('confirmPassword')} /></Grid.Col>
+          <Grid.Col span={{ base: 12, md: 8 }}>
+            <PasswordInput label="Password" required {...form.getInputProps('password')} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 4 }} style={{ display: 'flex', alignItems: 'flex-end' }}>
+            <Button 
+              variant="outline" 
+              leftSection={<IconRefresh size={16} />}
+              onClick={handleGeneratePassword}
+              disabled={isSubmitting}
+              fullWidth
+            >
+              Generate Random Password
+            </Button>
+          </Grid.Col>
         </Grid>
 
         <Title order={4} mt="lg" mb="md">Shipping Address</Title>

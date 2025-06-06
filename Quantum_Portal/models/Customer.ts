@@ -22,10 +22,11 @@ const AddressSchema: Schema = new Schema({
 }, {_id: false}); // No separate _id for subdocuments unless needed for direct referencing
 
 export interface ICustomer extends Document {
-  email: string;
+  email?: string;
   password?: string; // Make optional so it can be deleted
   firstName?: string;
   lastName?: string;
+  phoneNumber?: string; // Added phone number field
   addresses?: IAddress[];
   wishlist?: mongoose.Schema.Types.ObjectId[];
   isActive: boolean; // New field
@@ -34,10 +35,11 @@ export interface ICustomer extends Document {
 }
 
 const CustomerSchema: Schema<ICustomer> = new Schema({
-  email: { type: String, required: true, unique: true, trim: true, lowercase: true },
+  email: { type: String, unique: true, trim: true, lowercase: true, sparse: true }, // sparse: true allows multiple null values
   password: { type: String, required: true }, // Will store hashed password
   firstName: { type: String, trim: true },
   lastName: { type: String, trim: true },
+  phoneNumber: { type: String, trim: true }, // Added phone number field
   addresses: [AddressSchema],
   wishlist: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
   isActive: { type: Boolean, default: true }, // New field added here

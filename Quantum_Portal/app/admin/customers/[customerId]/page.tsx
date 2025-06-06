@@ -6,6 +6,7 @@ import { IconAlertCircle, IconDeviceFloppy, IconUserCircle, IconMapPin, IconCale
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useParams } from 'next/navigation';
+import Link from 'next/link';
 import { hasPermission, Permission, Role } from '../../../../lib/permissions'; // Import permission utils
 import { notifications } from '@mantine/notifications';
 import dayjs from 'dayjs';
@@ -27,6 +28,7 @@ interface Customer {
     firstName?: string;
     lastName?: string;
     email: string;
+    phoneNumber?: string; // Added phone number field
     isActive: boolean;
     addresses?: Address[];
     createdAt: string;
@@ -49,7 +51,7 @@ export default function CustomerDetailsPage() {
 
   const [currentIsActive, setCurrentIsActive] = useState<boolean>(false);
 
-  const userRole = session?.user?.role as Role | undefined;
+  const userRole = (session?.user as any)?.role as Role | undefined;
   const canManageCustomers = userRole ? hasPermission(userRole, Permission.MANAGE_CUSTOMERS) : false;
 
 
@@ -215,12 +217,12 @@ export default function CustomerDetailsPage() {
                      <ThemeIcon variant="light" size="lg" radius="md"><IconUserCircle size="1.5rem" /></ThemeIcon>
                      <Title order={4}>Profile Information</Title>
                  </Group>
-                 <Text><strong>Name:</strong> {`${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'N/A'}</Text>
-                 <Text><strong>Email:</strong> <a href={`mailto:${customer.email}`}>{customer.email}</a></Text>
+                 <Text><strong>Name:</strong> {customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'N/A' : 'N/A'}</Text>
+                 <Text><strong>Email:</strong> {customer?.email ? <a href={`mailto:${customer.email}`}>{customer.email}</a> : 'N/A'}</Text>
                  {/* Display phone number if available on customer object (not directly on model currently) */}
-                 {customer.phoneNumber && <Text><strong>Phone:</strong> {customer.phoneNumber}</Text>}
-                 <Text mt="xs"><strong>Registered:</strong> {dayjs(customer.createdAt).format('MMM D, YYYY h:mm A')}</Text>
-                 <Text size="xs" c="dimmed"><strong>Last Updated:</strong> {dayjs(customer.updatedAt).format('MMM D, YYYY h:mm A')}</Text>
+                 {customer?.phoneNumber && <Text><strong>Phone:</strong> {customer.phoneNumber}</Text>}
+                 <Text mt="xs"><strong>Registered:</strong> {customer ? dayjs(customer.createdAt).format('MMM D, YYYY h:mm A') : 'N/A'}</Text>
+                 <Text size="xs" c="dimmed"><strong>Last Updated:</strong> {customer ? dayjs(customer.updatedAt).format('MMM D, YYYY h:mm A') : 'N/A'}</Text>
              </Paper>
 
              <Paper withBorder shadow="sm" p="md" radius="md" mb="lg">
@@ -228,7 +230,7 @@ export default function CustomerDetailsPage() {
                       <ThemeIcon variant="light" size="lg" radius="md"><IconMapPin size="1.5rem" /></ThemeIcon>
                       <Title order={4}>Addresses</Title>
                  </Group>
-                 {customer.addresses && customer.addresses.length > 0
+                 {customer?.addresses && customer.addresses.length > 0
                     ? customer.addresses.map((addr, index) => renderAddressCard(addr, index))
                     : <Text c="dimmed">No addresses on file for this customer.</Text>
                  }
@@ -267,7 +269,7 @@ export default function CustomerDetailsPage() {
                             onClick={handleIsActiveToggle} // Renamed handler
                             loading={isUpdatingStatus}
                             leftSection={<IconDeviceFloppy size={16}/>}
-                            disabled={customer.isActive === currentIsActive || isLoading}
+                            disabled={!customer || customer.isActive === currentIsActive || isLoading}
                         >
                             Save Status Change
                         </Button>
@@ -278,7 +280,7 @@ export default function CustomerDetailsPage() {
              <Paper withBorder shadow="sm" p="md" radius="md">
                  <Title order={4} mb="sm">Order History (Placeholder)</Title>
                  <Text c="dimmed">Customer&apos;s order history summary will be displayed here.</Text>
-                 <Button variant="outline" size="xs" mt="sm" component={Link} href={`/admin/orders?customerId=${customer._id}`}>View All Orders</Button>
+                 <Button variant="outline" size="xs" mt="sm" component={Link} href={`/admin/orders?customerId=${customer?._id || ''}`}>View All Orders</Button>
              </Paper>
          </Grid.Col>
      </Grid>

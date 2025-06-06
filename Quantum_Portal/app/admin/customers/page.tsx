@@ -34,7 +34,7 @@ export default function CustomersPage() {
   const { data: session, status: authStatus } = useSession();
   const router = useRouter();
 
-  const userRole = session?.user?.role as Role | undefined;
+  const userRole = (session?.user as any)?.role as Role | undefined;
   const canManageCustomers = userRole ? hasPermission(userRole, Permission.MANAGE_CUSTOMERS) : false;
 
   const [customers, setCustomers] = useState<Customer[]>([]);

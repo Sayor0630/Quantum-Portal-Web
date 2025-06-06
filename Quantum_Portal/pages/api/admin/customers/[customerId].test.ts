@@ -1,5 +1,5 @@
 import { createMocks, RequestMethod } from 'node-mocks-http';
-import handler from './[id]'; // The API route handler
+import handler from './[customerId]'; // The API route handler
 import { getServerSession } from 'next-auth/next';
 import dbConnect from '../../../../lib/dbConnect';
 import Customer from '../../../../models/Customer';

@@ -5,25 +5,35 @@ import { useRouter, useParams } from 'next/navigation';
 import AdminLayout from '../../../../../components/admin/AdminLayout';
 import {
     Paper, Title, TextInput, PasswordInput, Button, Switch, Grid, Textarea,
-    Group, LoadingOverlay, Checkbox, Alert, Space, Text
+    Group, LoadingOverlay, Checkbox, Alert, Space, Text, ActionIcon
 } from '@mantine/core';
 import { useForm, zodResolver } from '@mantine/form';
 import { z } from 'zod';
 import { notifications } from '@mantine/notifications';
-import { IconDeviceFloppy, IconX, IconAlertCircle, IconArrowLeft } from '@tabler/icons-react';
+import { IconDeviceFloppy, IconX, IconAlertCircle, IconArrowLeft, IconRefresh } from '@tabler/icons-react';
 import { useSession } from 'next-auth/react';
 import { hasPermission, Permission, Role } from '../../../../../lib/permissions';
 import Link from 'next/link';
 
+// Helper function to generate a random password
+const generateRandomPassword = () => {
+    const length = 12;
+    const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+    let password = '';
+    for (let i = 0; i < length; i++) {
+        password += charset.charAt(Math.floor(Math.random() * charset.length));
+    }
+    return password;
+};
+
 // Zod schema for validation
 const customerEditSchema = z.object({
     firstName: z.string().min(1, { message: 'First name is required' }),
-    lastName: z.string().min(1, { message: 'Last name is required' }),
-    email: z.string().email({ message: 'Invalid email address' }),
+    lastName: z.string().optional(),
+    email: z.string().email({ message: 'Invalid email address' }).optional().or(z.literal('')),
     password: z.string().optional(), // Optional on edit
-    confirmPassword: z.string().optional(),
-    phoneNumber: z.string().optional().refine(val => !val || (/^01\d{9}$/.test(val)), {
-        message: 'Phone number must be 11 digits starting with "01" or empty',
+    phoneNumber: z.string().min(1, { message: 'Phone number is required' }).refine(val => /^01\d{9}$/.test(val), {
+        message: 'Phone number must be 11 digits starting with "01"',
     }),
     shipping_street: z.string().optional(),
     shipping_city: z.string().optional(),
@@ -39,13 +49,12 @@ const customerEditSchema = z.object({
     isActive: z.boolean().default(true),
 }).refine(data => {
     if (data.password && data.password.length > 0) { // If password is being changed
-        if (data.password.length < 8) return false; // Check min length
-        return data.password === data.confirmPassword; // Check match
+        return data.password.length >= 8; // Check min length
     }
     return true; // Pass if password is not being changed
 }, {
-    message: "Passwords must match and be at least 8 characters long, or leave blank to keep current password.",
-    path: ['confirmPassword'],
+    message: "Password must be at least 8 characters long, or leave blank to keep current password.",
+    path: ['password'],
 });
 
 // Interface for address from Customer model
@@ -92,7 +101,6 @@ export default function EditCustomerPage() {
       lastName: '',
       email: '',
       password: '',
-      confirmPassword: '',
       phoneNumber: '',
       shipping_street: '',
       shipping_city: '',
@@ -110,7 +118,18 @@ export default function EditCustomerPage() {
     validate: zodResolver(customerEditSchema),
   });
 
-  const userRole = session?.user?.role as Role | undefined;
+  // Function to handle generate random password
+  const handleGeneratePassword = () => {
+    const newPassword = generateRandomPassword();
+    form.setFieldValue('password', newPassword);
+    notifications.show({
+      title: 'Password Generated',
+      message: 'A random password has been generated and filled in the password field.',
+      color: 'blue',
+    });
+  };
+
+  const userRole = (session?.user as any)?.role as Role | undefined;
   const canManageCustomers = userRole ? hasPermission(userRole, Permission.MANAGE_CUSTOMERS) : false;
 
   useEffect(() => {
@@ -123,7 +142,9 @@ export default function EditCustomerPage() {
   const fetchCustomerData = useCallback(async () => {
     if (!customerId || authStatus !== 'authenticated' || !canManageCustomers) {
         setIsLoadingData(false);
-        if(authStatus === 'authenticated' && customerId) setError("No permission to fetch customer.");
+        if(authStatus === 'authenticated' && customerId) {
+          setSubmitError("No permission to fetch customer.");
+        }
         return;
     }
     setIsLoadingData(true);
@@ -161,11 +182,10 @@ export default function EditCustomerPage() {
         lastName: customer.lastName || '',
         email: customer.email || '',
         password: '', // Keep password blank by default on edit
-        confirmPassword: '',
-        phoneNumber: customer.phoneNumber || '', // Assuming phoneNumber might be returned by API
+        phoneNumber: customer.phoneNumber || '',
         shipping_street: shippingAddr?.street || '',
         shipping_city: shippingAddr?.city || '',
-        shipping_district: shippingAddr?.state || '', // Map 'state' from model to 'district' in form
+        shipping_district: shippingAddr?.state || '',
         shipping_postalCode: shippingAddr?.zipCode || '',
         shipping_country: shippingAddr?.country || 'Bangladesh',
         useShippingAsBilling: useShippingAsBilling,
@@ -177,19 +197,19 @@ export default function EditCustomerPage() {
         isActive: customer.isActive !== undefined ? customer.isActive : true,
       });
     } catch (err: any) {
-      setError(err.message);
+      setSubmitError(err.message);
       notifications.show({ title: 'Error Fetching Customer', message: err.message, color: 'red' });
     } finally {
       setIsLoadingData(false);
     }
-  }, [customerId, authStatus, canManageCustomers, form.setValues]); // form.setValues added
+  }, [customerId, authStatus, canManageCustomers, form.setValues]);
 
   useEffect(() => {
     if (customerId) {
       fetchCustomerData();
     } else {
       setIsLoadingData(false);
-      setError("No Customer ID provided.");
+      setSubmitError("No Customer ID provided.");
     }
   }, [customerId, fetchCustomerData]);
 
@@ -277,8 +297,8 @@ export default function EditCustomerPage() {
      return <AdminLayout><Paper p="xl"><Title order={3}>Access Denied</Title><Text>You do not have permission to edit customers.</Text></Paper></AdminLayout>;
   }
 
-  if (error && !isSubmitting) {
-    return <AdminLayout><Alert title="Error Loading Customer" color="red" icon={<IconAlertCircle />}>{error} <Button component={Link} href="/admin/customers" mt="sm">Back to List</Button></Alert></AdminLayout>;
+  if (submitError && !isSubmitting) {
+    return <AdminLayout><Alert title="Error Loading Customer" color="red" icon={<IconAlertCircle />}>{submitError} <Button component={Link} href="/admin/customers" mt="sm">Back to List</Button></Alert></AdminLayout>;
   }
   if (!form.values && !isLoadingData) { // Should ideally check if initial population failed
       return <AdminLayout><Text>Customer data could not be loaded.</Text></AdminLayout>;
@@ -300,16 +320,28 @@ export default function EditCustomerPage() {
         <Title order={4} mb="md">Personal Information</Title>
         <Grid>
           <Grid.Col span={{ base: 12, md: 6 }}><TextInput label="First Name" required {...form.getInputProps('firstName')} /></Grid.Col>
-          <Grid.Col span={{ base: 12, md: 6 }}><TextInput label="Last Name" required {...form.getInputProps('lastName')} /></Grid.Col>
-          <Grid.Col span={{ base: 12, md: 6 }}><TextInput label="Email" required type="email" {...form.getInputProps('email')} /></Grid.Col>
-          <Grid.Col span={{ base: 12, md: 6 }}><TextInput label="Phone Number (Optional)" placeholder="01xxxxxxxxx" {...form.getInputProps('phoneNumber')} /></Grid.Col>
+          <Grid.Col span={{ base: 12, md: 6 }}><TextInput label="Last Name" {...form.getInputProps('lastName')} /></Grid.Col>
+          <Grid.Col span={{ base: 12, md: 6 }}><TextInput label="Email" type="email" {...form.getInputProps('email')} /></Grid.Col>
+          <Grid.Col span={{ base: 12, md: 6 }}><TextInput label="Phone Number" required placeholder="01xxxxxxxxx" {...form.getInputProps('phoneNumber')} /></Grid.Col>
         </Grid>
 
         <Title order={4} mt="lg" mb="md">Credentials</Title>
-        <Text size="sm" c="dimmed" mb="xs">Leave password fields blank to keep the current password.</Text>
+        <Text size="sm" c="dimmed" mb="xs">Leave password field blank to keep the current password.</Text>
         <Grid>
-          <Grid.Col span={{ base: 12, md: 6 }}><PasswordInput label="New Password" {...form.getInputProps('password')} /></Grid.Col>
-          <Grid.Col span={{ base: 12, md: 6 }}><PasswordInput label="Confirm New Password" {...form.getInputProps('confirmPassword')} /></Grid.Col>
+          <Grid.Col span={{ base: 12, md: 8 }}>
+            <PasswordInput label="New Password" {...form.getInputProps('password')} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 4 }} style={{ display: 'flex', alignItems: 'flex-end' }}>
+            <Button 
+              variant="outline" 
+              leftSection={<IconRefresh size={16} />}
+              onClick={handleGeneratePassword}
+              disabled={isSubmitting || isLoadingData}
+              fullWidth
+            >
+              Generate Random Password
+            </Button>
+          </Grid.Col>
         </Grid>
 
         <Title order={4} mt="lg" mb="md">Shipping Address</Title>

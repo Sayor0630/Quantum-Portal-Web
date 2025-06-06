@@ -37,7 +37,11 @@ export default function PaymentMethodsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
 
-  const userRole = session?.user?.role as Role | undefined;
+  // Delete Handler state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [methodToDelete, setMethodToDelete] = useState<PaymentMethod | null>(null);
+
+  const userRole = (session?.user as any)?.role as Role | undefined;
   const canManagePaymentMethods = userRole ? hasPermission(userRole, Permission.MANAGE_PAYMENT_METHODS) : false;
 
   const fetchPaymentMethods = useCallback(async () => {
@@ -202,10 +206,6 @@ export default function PaymentMethodsPage() {
       </Table.Td>
     </Table.Tr>
   ));
-
-  // Delete Handler
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [methodToDelete, setMethodToDelete] = useState<PaymentMethod | null>(null);
 
   const handleDelete = (method: PaymentMethod) => {
     setMethodToDelete(method);

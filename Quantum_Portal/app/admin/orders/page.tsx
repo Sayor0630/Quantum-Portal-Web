@@ -7,7 +7,7 @@ import { IconEye, IconAlertCircle, IconSearch, IconFilter, IconCalendarEvent, Ic
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { notifications } from '@mantine/notifications';
-import { Role, Permission, hasPermission } from '../../../../lib/permissions';
+import { Role, Permission, hasPermission } from '../../../lib/permissions';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useDebouncedValue } from '@mantine/hooks';
@@ -89,7 +89,7 @@ const VALID_ORDER_STATUSES_FOR_DROPDOWN = [
 export default function OrdersPage() {
   const { data: session, status: authStatus } = useSession();
   const router = useRouter();
-  const userRole = session?.user?.role as Role | undefined;
+  const userRole = (session?.user as any)?.role as Role | undefined;
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -118,15 +118,14 @@ export default function OrdersPage() {
       if (dates[0]) queryParams.append('dateFrom', dayjs(dates[0]).format('YYYY-MM-DD'));
       if (dates[1]) queryParams.append('dateTo', dayjs(dates[1]).format('YYYY-MM-DD'));
 
-      // TODO: The API endpoint /api/admin/orders needs to be updated to return paymentStatus
-      // For now, we assume it's returned. If not, this will fail or show undefined.
+      // The API endpoint /api/admin/orders should return paymentStatus for each order
       const response = await fetch(`/api/admin/orders?${queryParams.toString()}`);
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
       }
       const data: PaginatedOrdersResponse = await response.json();
-      setOrders(data.orders); // Ensure 'orders' in response includes 'paymentStatus'
+      setOrders(data.orders);
       setCurrentPage(data.currentPage);
       setTotalPages(data.totalPages);
     } catch (err: any) {
@@ -143,10 +142,10 @@ export default function OrdersPage() {
       router.replace('/admin/login');
     }
     if (authStatus === 'authenticated' && userRole) { // Ensure userRole is available
-        // Check if user has permission to view orders, could be a general admin permission
-        // For now, assuming if they are authenticated admin, they can view.
-        // Add more specific permission check if needed, e.g. hasPermission(userRole, Permission.VIEW_ORDERS)
-        fetchOrders(currentPage, debouncedSearchTerm, selectedStatusFilter, dateRange);
+        // Check if user has permission to view orders
+        if (hasPermission(userRole, Permission.VIEW_ORDERS)) {
+          fetchOrders(currentPage, debouncedSearchTerm, selectedStatusFilter, dateRange);
+        }
     }
   }, [authStatus, router, userRole, currentPage, debouncedSearchTerm, selectedStatusFilter, dateRange, fetchOrders]);
 
@@ -222,7 +221,7 @@ export default function OrdersPage() {
   }
   // Ensure user has permission to be on this page at all (applies to whole page)
   // This could be a more general "access admin" permission or specific "view orders"
-  const canViewPage = userRole && hasPermission(userRole, Permission.CREATE_ORDER); // Example: Using CREATE_ORDER as a proxy for now
+  const canViewPage = userRole && hasPermission(userRole, Permission.VIEW_ORDERS);
 
   if (!canViewPage && authStatus === 'authenticated') {
     return (
@@ -269,7 +268,7 @@ export default function OrdersPage() {
                     <Menu.Item leftSection={<IconEye size={14} />} component={Link} href={`/admin/orders/${order._id}`}>
                         View Details
                     </Menu.Item>
-                    <Menu.Item leftSection={<IconEdit size={14} />} component={Link} href={`/admin/orders/${order._id}/edit`} disabled> {/* TODO: Enable when edit page exists */}
+                    <Menu.Item leftSection={<IconEdit size={14} />} component={Link} href={`/admin/orders/${order._id}/edit`} disabled>
                         Edit Order
                     </Menu.Item>
                     <Menu.Divider />
@@ -312,7 +311,7 @@ export default function OrdersPage() {
     <AdminLayout>
       <Group justify="space-between" mb="xl">
         <Title order={2}>Orders</Title>
-        {userRole && hasPermission(userRole, Permission.CREATE_ORDER) && ( // Assuming CREATE_ORDER allows adding new ones
+        {userRole && hasPermission(userRole, Permission.CREATE_ORDER) && (
           <Button leftSection={<IconPlus size={16} />} component={Link} href="/admin/orders/new">
             Add New Order
           </Button>
@@ -387,7 +386,8 @@ export default function OrdersPage() {
                          <Table.Th>Customer</Table.Th>
                          <Table.Th>Date</Table.Th>
                          <Table.Th>Total</Table.Th>
-                         <Table.Th>Status</Table.Th>
+                         <Table.Th>Payment Status</Table.Th>
+                         <Table.Th>Order Status</Table.Th>
                          <Table.Th>Items</Table.Th>
                          <Table.Th>Actions</Table.Th>
                      </Table.Tr>

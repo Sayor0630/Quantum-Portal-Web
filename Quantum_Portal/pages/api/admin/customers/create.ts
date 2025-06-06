@@ -30,6 +30,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     await dbConnect();
+    console.log('Database connected successfully'); // Add debug log
 
     const {
       firstName,
@@ -41,26 +42,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       addresses, // Expected to be an array of IAddress compatible objects
     } = req.body;
 
+    console.log('Received customer data:', { firstName, lastName, email, phoneNumber, isActive, addresses: addresses?.length || 0 }); // Add debug log
+
     // --- Basic Validation ---
-    if (!firstName || !lastName || !email || !password) {
-      return res.status(400).json({ success: false, message: 'Missing required fields: firstName, lastName, email, and password are required.' });
+    if (!firstName || !password) {
+      return res.status(400).json({ success: false, message: 'Missing required fields: firstName and password are required.' });
     }
-    if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!phoneNumber || typeof phoneNumber !== 'string' || !/^01\d{9}$/.test(phoneNumber)) {
+        return res.status(400).json({ success: false, message: 'Phone number is required and must be 11 digits starting with "01".' });
+    }
+    if (email && (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
         return res.status(400).json({ success: false, message: 'Invalid email format.' });
     }
     if (typeof password !== 'string' || password.length < 8) {
         return res.status(400).json({ success: false, message: 'Password must be at least 8 characters long.' });
     }
-    // Optional: Validate phoneNumber format if it were to be used more directly or stored in addresses
-    if (phoneNumber && (typeof phoneNumber !== 'string' || !/^01\d{9}$/.test(phoneNumber))) {
-        return res.status(400).json({ success: false, message: 'Invalid phone number format. Must be 11 digits starting with "01" or empty.' });
-    }
 
-
-    // --- Email Uniqueness Check ---
-    const existingCustomerByEmail = await Customer.findOne({ email: email.toLowerCase() });
-    if (existingCustomerByEmail) {
-      return res.status(409).json({ success: false, message: 'Email already in use.' });
+    // --- Email Uniqueness Check (only if email is provided) ---
+    if (email) {
+        const existingCustomerByEmail = await Customer.findOne({ email: email.toLowerCase() });
+        if (existingCustomerByEmail) {
+          return res.status(409).json({ success: false, message: 'Email already in use.' });
+        }
     }
 
     // --- Password Hashing ---
@@ -73,7 +76,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // The current IAddress in Customer.ts does not have 'phone'.
 
     // Validate and structure addresses
-    const validAddresses = [];
+    const validAddresses: Array<{
+        street: string;
+        city: string;
+        state: string;
+        zipCode: string;
+        country: string;
+        isDefaultShipping?: boolean;
+        isDefaultBilling?: boolean;
+    }> = [];
     if (addresses && Array.isArray(addresses)) {
         for (const addr of addresses) {
             // Basic check for core address fields
@@ -101,13 +112,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const newCustomer = new Customer({
       firstName,
       lastName,
-      email: email.toLowerCase(),
+      email: email ? email.toLowerCase() : undefined,
       password: hashedPassword,
+      phoneNumber, // Add phoneNumber field
       isActive: isActive !== undefined ? isActive : true, // Default to true if not provided
       addresses: validAddresses, // Use the validated and structured addresses
     });
 
+    console.log('About to save customer:', newCustomer.toObject()); // Add debug log
     await newCustomer.save();
+    console.log('Customer saved successfully:', newCustomer._id); // Add debug log
 
     // --- Response: Do NOT return the hashedPassword ---
     const customerResponse = {
@@ -115,9 +129,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       firstName: newCustomer.firstName,
       lastName: newCustomer.lastName,
       email: newCustomer.email,
+      phoneNumber: newCustomer.phoneNumber, // Include phoneNumber in response
       isActive: newCustomer.isActive,
       addresses: newCustomer.addresses,
-      // phoneNumber: newCustomer.phoneNumber, // Not on model
       createdAt: newCustomer.createdAt,
       updatedAt: newCustomer.updatedAt,
     };

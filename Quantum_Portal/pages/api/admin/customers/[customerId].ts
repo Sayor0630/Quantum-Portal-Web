@@ -14,12 +14,15 @@ const sanitizeCustomer = (customer: ICustomer) => {
 };
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const { query: { id }, method } = req;
+  const { query: { customerId }, method } = req;
 
-  if (!id || typeof id !== 'string' || !mongoose.Types.ObjectId.isValid(id)) {
+  console.log('Customer API called:', { customerId, method }); // Add debug log
+
+  if (!customerId || typeof customerId !== 'string' || !mongoose.Types.ObjectId.isValid(customerId)) {
+    console.log('Invalid customer ID:', customerId); // Add debug log
     return res.status(400).json({ success: false, message: 'Invalid customer ID.' });
   }
-  const customerId = new mongoose.Types.ObjectId(id as string);
+  const customerObjectId = new mongoose.Types.ObjectId(customerId as string);
 
   await dbConnect();
 
@@ -36,7 +39,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   switch (method) {
     case 'GET':
       try {
-        const customer = await Customer.findById(customerId).select('-password').lean(); // Exclude password
+        console.log('Searching for customer with ID:', customerObjectId); // Add debug log
+        const customer = await Customer.findById(customerObjectId).select('-password').lean(); // Exclude password
+        console.log('Customer found:', customer ? 'Yes' : 'No'); // Add debug log
         if (!customer) {
           return res.status(404).json({ success: false, message: 'Customer not found' });
         }
@@ -74,16 +79,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return res.status(400).json({ success: false, message: 'Invalid phone number format. Must be 11 digits starting with "01" or empty.' });
         }
 
-        const customerToUpdate = await Customer.findById(customerId);
+        const customerToUpdate = await Customer.findById(customerObjectId);
         if (!customerToUpdate) {
           return res.status(404).json({ success: false, message: 'Customer not found for update.' });
         }
 
         // --- Email Uniqueness Check (if changed) ---
-        if (email.toLowerCase() !== customerToUpdate.email.toLowerCase()) {
+        if (customerToUpdate.email && email.toLowerCase() !== customerToUpdate.email.toLowerCase()) {
           const existingCustomerWithNewEmail = await Customer.findOne({ email: email.toLowerCase() });
           if (existingCustomerWithNewEmail) {
             return res.status(409).json({ success: false, message: 'New email address is already in use.' });
+          }
+          customerToUpdate.email = email.toLowerCase();
+        } else if (!customerToUpdate.email) {
+          // If customer doesn't have email, set it
+          const existingCustomerWithNewEmail = await Customer.findOne({ email: email.toLowerCase() });
+          if (existingCustomerWithNewEmail) {
+            return res.status(409).json({ success: false, message: 'Email address is already in use.' });
           }
           customerToUpdate.email = email.toLowerCase();
         }

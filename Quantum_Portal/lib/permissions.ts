@@ -8,6 +8,7 @@ export enum Role {
 // Define Permissions
 export enum Permission {
   CREATE_ORDER = "create_order",
+  VIEW_ORDERS = "view_orders",
   MANAGE_PAYMENT_METHODS = "manage_payment_methods",
   MANAGE_CUSTOMERS = "manage_customers", // New permission
   // Add more permissions as needed
@@ -19,10 +20,11 @@ export const rolePermissions: Record<Role, Permission[]> = {
   [Role.SUPERADMIN]: Object.values(Permission), // Superadmin can do everything
   [Role.ADMIN]: [
     Permission.CREATE_ORDER,
+    Permission.VIEW_ORDERS,
     Permission.MANAGE_PAYMENT_METHODS,
     Permission.MANAGE_CUSTOMERS, // Assign to Admin
   ],
-  [Role.ORDER_MANAGER]: [Permission.CREATE_ORDER],
+  [Role.ORDER_MANAGER]: [Permission.CREATE_ORDER, Permission.VIEW_ORDERS],
 };
 
 // Function to check if a role has a specific permission

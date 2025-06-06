@@ -96,7 +96,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (email && typeof email === 'string') { // Email is required to find or create customer if no ID provided
             let customer: ICustomer | null = await Customer.findOne({ email: email.toLowerCase() });
             if (customer) {
-                finalCustomerId = customer._id;
+                finalCustomerId = customer._id as mongoose.Types.ObjectId;
             } else {
                 // Create new customer
                 const nameParts = customerName.split(' ');
@@ -121,7 +121,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                     isActive: true,
                 });
                 await newCustomer.save();
-                finalCustomerId = newCustomer._id;
+                finalCustomerId = newCustomer._id as mongoose.Types.ObjectId;
             }
         } else {
             // Email is not provided and no customerId was selected - this case implies guest checkout or error
