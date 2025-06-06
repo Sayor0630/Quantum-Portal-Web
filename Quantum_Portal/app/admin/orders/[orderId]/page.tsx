@@ -31,13 +31,15 @@ interface OrderItem {
 }
 interface Address { // Define a basic address structure
     fullName?: string; // May or may not be present
-    street1: string;
-    street2?: string;
+    fullName: string; // Added
+    phone: string; // Added
+    email?: string; // Added
+    street: string; // Was street1
     city: string;
-    state: string;
+    district: string; // Was state, now more specific
+    state?: string; // Optional for broader region
     postalCode: string;
     country: string;
-    phone?: string;
 }
 interface OrderCustomer {
     _id: string;
@@ -58,28 +60,43 @@ interface Order {
     orderItems: OrderItem[];
     totalAmount: number;
     status: string;
-    shippingAddress?: Address;
+    paymentStatus: 'unpaid' | 'paid'; // Added
+    shippingAddress: Address; // Changed to required, as per new model
     billingAddress?: Address;
-    paymentDetails?: PaymentDetails;
+    paymentDetails?: PaymentDetails; // Keep for now, though paymentStatus is primary
+    deliveryNote?: string; // Added
     createdAt: string;
     updatedAt: string;
-    // adminNotes?: string;
 }
 
-const ALLOWED_ORDER_STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded', 'on-hold', 'failed'];
+// VALID_ORDER_STATUSES from list page, can be reused or redefined if different
+const VALID_ORDER_STATUSES_DETAILS = [
+  'pending', 'processing', 'shipped', 'delivered', 'completed',
+  'cancelled', 'refunded', 'on-hold', 'failed'
+];
+
 const getStatusColor = (status: string) => {
      switch (status?.toLowerCase()) {
      case 'pending': return 'yellow';
+     case 'completed': return 'teal';
      case 'processing': return 'blue';
      case 'shipped': return 'cyan';
      case 'delivered': return 'green';
      case 'cancelled': return 'red';
-     case 'refunded': return 'dark'; // Changed from gray for better visibility
+     case 'refunded': return 'dark';
      case 'on-hold': return 'orange';
      case 'failed': return 'pink';
-     default: return 'gray'; // Default for unknown statuses
+     default: return 'gray';
      }
  };
+
+const getPaymentStatusColor = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'paid': return 'green';
+      case 'unpaid': return 'red';
+      default: return 'gray';
+    }
+};
 
 
 export default function OrderDetailsPage() {
@@ -90,23 +107,32 @@ export default function OrderDetailsPage() {
 
   const [order, setOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [isUpdatingOrderStatus, setIsUpdatingOrderStatus] = useState(false);
+  const [isUpdatingPaymentStatus, setIsUpdatingPaymentStatus] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedStatus, setSelectedStatus] = useState<string>('');
+  const [selectedOrderStatus, setSelectedOrderStatus] = useState<string>('');
+  // No selectedPaymentStatus state needed if using buttons or direct calls
 
   const fetchOrderDetails = useCallback(async () => {
     if (!orderId || authStatus !== 'authenticated') return;
     setIsLoading(true);
     setError(null);
     try {
+      // IMPORTANT: The /api/admin/orders/[orderId] (GET) endpoint
+      // MUST be updated to return the new fields: paymentStatus, deliveryNote,
+      // and the updated shippingAddress structure.
       const response = await fetch(`/api/admin/orders/${orderId}`);
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
       }
-      const data: Order = await response.json();
-      setOrder(data);
-      setSelectedStatus(data.status);
+      const result = await response.json(); // Assuming API returns { success: true, data: order }
+      if (result.success) {
+        setOrder(result.data);
+        setSelectedOrderStatus(result.data.status);
+      } else {
+        throw new Error(result.message || 'Failed to parse order data.');
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to fetch order details.');
       setOrder(null);
@@ -119,33 +145,33 @@ export default function OrderDetailsPage() {
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
       router.replace('/admin/login');
-    } else if (orderId) { // Fetch if authenticated and orderId is present
+    } else if (orderId) {
       fetchOrderDetails();
     }
   }, [authStatus, router, orderId, fetchOrderDetails]);
 
-  const handleStatusUpdate = async () => {
-     if (!selectedStatus || selectedStatus === order?.status) {
-         notifications.show({ title: 'No Change', message: 'Status is already the same or not selected.', color: 'blue' });
+  const handleOrderStatusUpdate = async () => {
+     if (!selectedOrderStatus || selectedOrderStatus === order?.status) {
+         notifications.show({ title: 'No Change', message: 'Order status is already the same or not selected.', color: 'blue' });
          return;
      }
-     setIsUpdatingStatus(true);
-     setError(null); // Clear previous general errors
+     setIsUpdatingOrderStatus(true);
+     setError(null);
      try {
-         const response = await fetch(`/api/admin/orders/${orderId}`, {
+         const response = await fetch(`/api/admin/orders/${orderId}/update-order-status`, { // Correct endpoint
              method: 'PUT',
              headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify({ status: selectedStatus }), // API expects { status, adminNotes, trackingNumber }
+             body: JSON.stringify({ status: selectedOrderStatus }),
          });
-         const data = await response.json(); // API should return the updated order
-         if (!response.ok) {
-             throw new Error(data.message || 'Failed to update order status.');
+         const result = await response.json();
+         if (!response.ok || !result.success) {
+             throw new Error(result.message || 'Failed to update order status.');
          }
-         setOrder(data);
-         setSelectedStatus(data.status);
+         setOrder(result.data); // API returns updated order
+         setSelectedOrderStatus(result.data.status);
          notifications.show({
-             title: 'Status Updated',
-             message: `Order status successfully updated to ${data.status}.`,
+             title: 'Order Status Updated',
+             message: `Order status successfully updated to ${result.data.status}.`,
              color: 'green',
              icon: <IconTruckDelivery />,
          });
@@ -153,9 +179,42 @@ export default function OrderDetailsPage() {
          setError(err.message); // Set error for display within the page if needed
          notifications.show({ title: 'Update Error', message: err.message, color: 'red' });
      } finally {
-         setIsUpdatingStatus(false);
+         setIsUpdatingOrderStatus(false);
      }
   };
+
+  const handlePaymentStatusUpdate = async (newPaymentStatus: 'paid' | 'unpaid') => {
+    if (order?.paymentStatus === newPaymentStatus) {
+        notifications.show({ title: 'No Change', message: `Payment status is already ${newPaymentStatus}.`, color: 'blue' });
+        return;
+    }
+    setIsUpdatingPaymentStatus(true);
+    setError(null);
+    try {
+        const response = await fetch(`/api/admin/orders/${orderId}/update-payment-status`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paymentStatus: newPaymentStatus }),
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || 'Failed to update payment status.');
+        }
+        setOrder(result.data); // API returns updated order
+        notifications.show({
+            title: 'Payment Status Updated',
+            message: `Payment status successfully updated to ${result.data.paymentStatus}.`,
+            color: 'green',
+            icon: <IconReceipt />,
+        });
+    } catch (err: any) {
+        setError(err.message);
+        notifications.show({ title: 'Update Error', message: err.message, color: 'red' });
+    } finally {
+        setIsUpdatingPaymentStatus(false);
+    }
+ };
+
 
   if (authStatus === 'loading' || (isLoading && authStatus === 'authenticated')) {
      return <AdminLayout><LoadingOverlay visible={true} overlayProps={{ radius: 'sm', blur: 2, fixed: true }} /></AdminLayout>;
@@ -163,28 +222,31 @@ export default function OrderDetailsPage() {
   if (authStatus === 'unauthenticated') {
      return <Text p="xl">Redirecting to login...</Text>;
   }
-  if (error && !order && !isLoading) {
+  if (error && !order && !isLoading) { // Show error if loading failed and no order data
      return <AdminLayout><Alert title="Error Loading Order Details" color="red" icon={<IconAlertCircle />}>{error}</Alert></AdminLayout>;
   }
-  if (!order) {
+  if (!order) { // If still no order after loading (e.g. fetch error cleared but order is null)
      return <AdminLayout><Text p="xl" ta="center">Order not found or still loading...</Text></AdminLayout>;
   }
 
+  // Updated renderAddress to match new Address structure from Order model
   const renderAddress = (addr: Address | undefined, type: string) => {
-     if (!addr) return <Text c="dimmed">Not provided</Text>;
+     if (!addr) return <Text c="dimmed">Not provided for {type}</Text>;
      return (
          <Paper p="sm" withBorder radius="sm" mt="sm">
-             <Text fw={500} mb={2}>{type} Address:</Text>
-             {addr.fullName && <Text>{addr.fullName}</Text>}
-             <Text>{addr.street1} {addr.street2 || ''}</Text>
-             <Text>{addr.city}, {addr.state} {addr.postalCode}</Text>
-             <Text>{addr.country}</Text>
-             {addr.phone && <Text mt={2} size="xs">Phone: {addr.phone}</Text>}
+             <Text fw={500} mb={2}>{type} Details:</Text>
+             <Text><strong>Recipient:</strong> {addr.fullName}</Text>
+             <Text><strong>Phone:</strong> {addr.phone}</Text>
+             {addr.email && <Text><strong>Email:</strong> {addr.email}</Text>}
+             <Text><strong>Address:</strong> {addr.street}</Text>
+             <Text>{addr.city}, {addr.district}</Text>
+             <Text>{addr.postalCode}, {addr.country}</Text>
+             {addr.state && <Text>(State/Region: {addr.state})</Text>}
          </Paper>
      );
   };
 
-  const customerDisplayName = order.customer && typeof order.customer !== 'string'
+  const customerDisplayName = order.customer
     ? `${order.customer.firstName || ''} ${order.customer.lastName || ''}`.trim() || order.customer.email
     : 'Guest Customer';
 
@@ -195,37 +257,37 @@ export default function OrderDetailsPage() {
         <Button variant="outline" onClick={() => router.push('/admin/orders')} leftSection={<IconArrowLeft size={16}/>}>Back to Orders</Button>
       </Group>
 
-      {error && !isUpdatingStatus && (
+      {error && !isUpdatingOrderStatus && !isUpdatingPaymentStatus && ( // Show general page error if no specific update is happening
          <Alert title="Page Error" color="red" icon={<IconAlertCircle />} withCloseButton onClose={() => setError(null)} mb="lg">
              {error}
          </Alert>
       )}
 
      <Grid gutter="lg">
-         <Grid.Col span={{ base: 12, lg: 8 }}> {/* Main content column */}
+         <Grid.Col span={{ base: 12, lg: 8 }}>
              <Paper withBorder shadow="sm" p="md" radius="md" mb="lg">
                  <Title order={4} mb="sm">Order Items</Title>
+                 {/* TODO: Add a check for order.orderItems being an array and having length */}
                  <ScrollArea>
                     <Table striped highlightOnHover verticalSpacing="sm" miw={600}>
                         <Table.Thead>
                             <Table.Tr><Table.Th>Product</Table.Th><Table.Th>SKU</Table.Th><Table.Th style={{textAlign: 'center'}}>Qty</Table.Th><Table.Th style={{textAlign: 'right'}}>Unit Price</Table.Th><Table.Th style={{textAlign: 'right'}}>Total</Table.Th></Table.Tr>
                         </Table.Thead>
                         <Table.Tbody>
-                            {order.orderItems.map(item => {
-                                const productExists = item.product && typeof item.product !== 'string';
-                                const product = productExists ? item.product : null;
-                                const imageUrl = product && Array.isArray(product.images) && product.images.length > 0
+                            {order.orderItems && order.orderItems.map(item => {
+                                const product = item.product; // Already populated or null
+                                const imageUrl = product?.images?.[0]
                                     ? (typeof product.images[0] === 'string' ? product.images[0] : (product.images[0] as ProductImage).url)
                                     : '/placeholder-image.png';
                                 return (
-                                <Table.Tr key={item._id || (product ? product._id : Math.random().toString()) }>
+                                <Table.Tr key={item._id || (product?._id || Math.random().toString())}>
                                     <Table.Td>
                                         <Group gap="sm" wrap="nowrap">
-                                            <Image src={imageUrl} alt={product ? product.name : 'Product Image'} w={40} h={40} fit="contain" radius="sm" />
-                                            <Text size="sm" fw={500}>{product ? product.name : 'Product Not Found'}</Text>
+                                            <Image src={imageUrl} alt={product?.name || 'Product Image'} w={40} h={40} fit="contain" radius="sm" />
+                                            <Text size="sm" fw={500}>{product?.name || 'Product Not Found'}</Text>
                                         </Group>
                                     </Table.Td>
-                                    <Table.Td>{product ? product.sku || 'N/A' : 'N/A'}</Table.Td>
+                                    <Table.Td>{product?.sku || 'N/A'}</Table.Td>
                                     <Table.Td style={{textAlign: 'center'}}>{item.quantity}</Table.Td>
                                     <Table.Td style={{textAlign: 'right'}}>${item.price.toFixed(2)}</Table.Td>
                                     <Table.Td style={{textAlign: 'right'}}>${(item.quantity * item.price).toFixed(2)}</Table.Td>
@@ -239,20 +301,18 @@ export default function OrderDetailsPage() {
                  </Group>
              </Paper>
 
-             {order.paymentDetails && (
-                 <Paper withBorder shadow="sm" p="md" radius="md" mb="lg">
-                     <Group gap="xs" mb="sm">
-                         <ThemeIcon variant="light" size="lg" radius="md"><IconReceipt size="1.2rem" /></ThemeIcon>
-                         <Title order={4}>Payment Details</Title>
-                     </Group>
-                     <Text>Status: {order.paymentDetails.status || 'N/A'}</Text>
-                     <Text>Method: {order.paymentDetails.method || 'N/A'}</Text>
-                     <Text>Transaction ID: {order.paymentDetails.transactionId || 'N/A'}</Text>
-                 </Paper>
-             )}
+             {/* Delivery Note Display */}
+            {order.deliveryNote && (
+                <Paper withBorder shadow="sm" p="md" radius="md" mb="lg">
+                    <Title order={4} mb="xs">Delivery Note</Title>
+                    <Text>{order.deliveryNote}</Text>
+                </Paper>
+            )}
+
+            {/* Removed old paymentDetails block, will rely on new payment status controls */}
          </Grid.Col>
 
-         <Grid.Col span={{ base: 12, lg: 4 }}> {/* Sidebar column */}
+         <Grid.Col span={{ base: 12, lg: 4 }}>
               <Card withBorder p="md" radius="md" mb="lg">
                  <Group gap="xs" mb="sm" align="center">
                      <ThemeIcon variant="light" color={getStatusColor(order.status)} size="xl" radius="md"><IconFileInvoice size="1.5rem" /></ThemeIcon>
@@ -262,33 +322,60 @@ export default function OrderDetailsPage() {
                      </div>
                  </Group>
                  <Text size="xs" c="dimmed" mt={-5} mb="sm">Placed on: {dayjs(order.createdAt).format('MMM D, YYYY h:mm A')}</Text>
+
                  <Divider my="sm" />
+                 <Text fw={500} size="sm">Payment Method:</Text>
+                 <Text size="sm" c="dimmed" mb="xs">{order.paymentMethod || 'N/A'}</Text>
+
+                 <Title order={5} mb="xs">Payment Status</Title>
+                 <Group mb="sm">
+                    <Badge color={getPaymentStatusColor(order.paymentStatus)} size="lg" radius="sm" variant="filled">
+                        {order.paymentStatus.charAt(0).toUpperCase() + order.paymentStatus.slice(1)}
+                    </Badge>
+                 </Group>
+                 <Group grow>
+                    <Button
+                        size="xs" variant="outline" color="green"
+                        onClick={() => handlePaymentStatusUpdate('paid')}
+                        disabled={order.paymentStatus === 'paid' || isUpdatingPaymentStatus || isUpdatingOrderStatus}
+                        loading={isUpdatingPaymentStatus && order.paymentStatus !== 'paid'}
+                    >Mark Paid</Button>
+                    <Button
+                        size="xs" variant="outline" color="red"
+                        onClick={() => handlePaymentStatusUpdate('unpaid')}
+                        disabled={order.paymentStatus === 'unpaid' || isUpdatingPaymentStatus || isUpdatingOrderStatus}
+                        loading={isUpdatingPaymentStatus && order.paymentStatus !== 'unpaid'}
+                    >Mark Unpaid</Button>
+                 </Group>
+
+                 <Divider my="sm" />
+                 <Title order={5} mb="xs">Order Status</Title>
                  <Group mb="md" align="center" justify="space-between">
-                     <Text fw={500}>Status:</Text>
                      <Badge color={getStatusColor(order.status)} size="lg" radius="sm" variant="filled">
                          {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
                      </Badge>
                  </Group>
                  <Select
                      label="Change Order Status"
-                     data={ALLOWED_ORDER_STATUSES.map(s => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) }))}
-                     value={selectedStatus}
-                     onChange={(value) => setSelectedStatus(value || order.status)}
+                     data={VALID_ORDER_STATUSES_DETAILS.map(s => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) }))}
+                     value={selectedOrderStatus}
+                     onChange={(value) => setSelectedOrderStatus(value || order.status)}
                      mb="sm"
-                     disabled={isUpdatingStatus || isLoading}
+                     disabled={isUpdatingOrderStatus || isLoading || isUpdatingPaymentStatus}
                  />
                  <Button
                      fullWidth
-                     onClick={handleStatusUpdate}
-                     loading={isUpdatingStatus}
+                     onClick={handleOrderStatusUpdate}
+                     loading={isUpdatingOrderStatus}
                      leftSection={<IconEdit size={16}/>}
-                     disabled={selectedStatus === order.status}
+                     disabled={selectedOrderStatus === order.status || isUpdatingPaymentStatus}
                  >
-                     Update Status
+                     Update Order Status
                  </Button>
+                 <Button component={Link} href={`/admin/orders/${orderId}/edit`} fullWidth variant="outline" mt="sm" disabled>Edit Full Order (Future)</Button>
              </Card>
 
-             {order.customer && typeof order.customer !== 'string' && (
+             {order.customer && (
                  <Paper withBorder shadow="sm" p="md" radius="md" mb="lg">
                       <Group gap="xs" mb="sm">
                          <ThemeIcon variant="light" size="lg" radius="md"><IconUserCircle size="1.2rem" /></ThemeIcon>
@@ -296,14 +383,14 @@ export default function OrderDetailsPage() {
                      </Group>
                      <Text>{customerDisplayName}</Text>
                      <Text size="sm" c="dimmed">{order.customer.email}</Text>
-                     {/* Link to customer edit page: /admin/customers/edit/[customerId] */}
                      <Button component={Link} href={`/admin/customers/${order.customer._id}`} variant="subtle" size="xs" mt={5}>View Customer</Button>
                  </Paper>
              )}
 
-             {order.shippingAddress && renderAddress(order.shippingAddress, 'Shipping')}
-             {order.billingAddress && JSON.stringify(order.shippingAddress) !== JSON.stringify(order.billingAddress) && renderAddress(order.billingAddress, 'Billing')}
-             {!order.billingAddress && order.shippingAddress && renderAddress(order.shippingAddress, 'Billing (same as Shipping)')}
+             {/* Use the updated renderAddress for shipping. Billing address display logic might need adjustment if its structure also changed. */}
+             {renderAddress(order.shippingAddress, 'Shipping')}
+             {order.billingAddress && renderAddress(order.billingAddress, 'Billing')}
+             {/* Removed the "Billing (same as Shipping)" part as shippingAddress is now required and should always exist if order exists */}
 
 
          </Grid.Col>

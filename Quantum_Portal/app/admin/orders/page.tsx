@@ -1,11 +1,12 @@
 'use client';
 
 import AdminLayout from '../../../components/admin/AdminLayout';
-import { Title, Text, Paper, Table, Group, Button, ActionIcon, LoadingOverlay, Alert, ScrollArea, Pagination, TextInput, Select, Badge, Space, Grid } from '@mantine/core';
+import { Title, Text, Paper, Table, Group, Button, ActionIcon, LoadingOverlay, Alert, ScrollArea, Pagination, TextInput, Select, Badge, Space, Grid, Menu } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
-import { IconEye, IconAlertCircle, IconSearch, IconFilter, IconCalendarEvent, IconPlus } from '@tabler/icons-react'; // Changed IconCalendar to IconCalendarEvent
+import { IconEye, IconAlertCircle, IconSearch, IconFilter, IconCalendarEvent, IconPlus, IconDotsVertical, IconEdit, IconReceipt, IconCircleCheck, IconCircleX, IconTruckDelivery } from '@tabler/icons-react';
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
+import { notifications } from '@mantine/notifications';
 import { Role, Permission, hasPermission } from '../../../../lib/permissions';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -36,7 +37,8 @@ interface Order {
   customer?: OrderCustomer | string; // API might send populated customer or just ID
   orderItems: OrderItem[];
   totalAmount: number;
-  status: string;
+  status: string; // e.g. 'pending', 'processing'
+  paymentStatus: 'unpaid' | 'paid'; // Added paymentStatus
   createdAt: string; // ISO Date string
 }
 
@@ -57,53 +59,74 @@ const getStatusColor = (status: string) => {
      case 'refunded': return 'gray';
      case 'on-hold': return 'orange';
      case 'failed': return 'pink';
+     case 'completed': return 'teal'; // Added for consistency with model
      default: return 'dimmed';
      }
  };
 
-const ORDER_STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded', 'on-hold', 'failed'];
+const getPaymentStatusColor = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'paid': return 'green';
+      case 'unpaid': return 'red';
+      default: return 'gray';
+    }
+};
+
+// From Order Model
+const VALID_ORDER_STATUSES_FOR_DROPDOWN = [
+    { value: 'pending', label: 'Pending' },
+    { value: 'processing', label: 'Processing' },
+    { value: 'shipped', label: 'Shipped' },
+    { value: 'delivered', label: 'Delivered' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'cancelled', label: 'Cancelled' },
+    { value: 'refunded', label: 'Refunded' },
+    { value: 'on-hold', label: 'On Hold' },
+    { value: 'failed', label: 'Failed' },
+];
 
 
 export default function OrdersPage() {
   const { data: session, status: authStatus } = useSession();
   const router = useRouter();
-
-  // Explicitly type the session user role or define a more specific session type
   const userRole = session?.user?.role as Role | undefined;
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false); // For individual row updates
 
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm] = useDebouncedValue(searchTerm, 500);
-  const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<string | null>(null); // Renamed for clarity
   const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([null, null]);
 
 
   const fetchOrders = useCallback(async (page: number, search: string, statusFilter: string | null, dates: [Date | null, Date | null]) => {
-    setIsLoading(true);
+    setIsLoading(true); // Overall loading for table
     setError(null);
     try {
       const queryParams = new URLSearchParams({
         page: String(page),
-        limit: '10',
+        limit: '10', // Consider making limit configurable
       });
       if (search) queryParams.append('search', search);
       if (statusFilter) queryParams.append('status', statusFilter);
       if (dates[0]) queryParams.append('dateFrom', dayjs(dates[0]).format('YYYY-MM-DD'));
       if (dates[1]) queryParams.append('dateTo', dayjs(dates[1]).format('YYYY-MM-DD'));
 
+      // TODO: The API endpoint /api/admin/orders needs to be updated to return paymentStatus
+      // For now, we assume it's returned. If not, this will fail or show undefined.
       const response = await fetch(`/api/admin/orders?${queryParams.toString()}`);
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
       }
       const data: PaginatedOrdersResponse = await response.json();
-      setOrders(data.orders);
+      setOrders(data.orders); // Ensure 'orders' in response includes 'paymentStatus'
       setCurrentPage(data.currentPage);
       setTotalPages(data.totalPages);
     } catch (err: any) {
@@ -114,14 +137,18 @@ export default function OrdersPage() {
     }
   }, []);
 
+
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
       router.replace('/admin/login');
     }
-    if (authStatus === 'authenticated') {
-      fetchOrders(currentPage, debouncedSearchTerm, selectedStatus, dateRange);
+    if (authStatus === 'authenticated' && userRole) { // Ensure userRole is available
+        // Check if user has permission to view orders, could be a general admin permission
+        // For now, assuming if they are authenticated admin, they can view.
+        // Add more specific permission check if needed, e.g. hasPermission(userRole, Permission.VIEW_ORDERS)
+        fetchOrders(currentPage, debouncedSearchTerm, selectedStatusFilter, dateRange);
     }
-  }, [authStatus, router, currentPage, debouncedSearchTerm, selectedStatus, dateRange, fetchOrders]);
+  }, [authStatus, router, userRole, currentPage, debouncedSearchTerm, selectedStatusFilter, dateRange, fetchOrders]);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -129,12 +156,12 @@ export default function OrdersPage() {
 
   const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(event.currentTarget.value);
-    setCurrentPage(1);
+    setCurrentPage(1); // Reset to first page on new search
   };
 
-  const handleStatusChange = (value: string | null) => {
-    setSelectedStatus(value);
-    setCurrentPage(1);
+  const handleStatusFilterChange = (value: string | null) => {
+    setSelectedStatusFilter(value);
+    setCurrentPage(1); // Reset to first page on filter change
   };
 
   const handleDateRangeChange = (dates: [Date | null, Date | null]) => {
@@ -143,16 +170,68 @@ export default function OrdersPage() {
   };
 
 
+
+  const handleChangePaymentStatus = async (orderId: string, newPaymentStatus: 'paid' | 'unpaid') => {
+    setIsUpdating(true);
+    try {
+      const response = await fetch(`/api/admin/orders/${orderId}/update-payment-status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentStatus: newPaymentStatus }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Failed to update payment status');
+      }
+      notifications.show({ title: 'Success', message: `Order payment status updated to ${newPaymentStatus}.`, color: 'green' });
+      fetchOrders(currentPage, debouncedSearchTerm, selectedStatusFilter, dateRange); // Refresh data
+    } catch (err: any) {
+      notifications.show({ title: 'Error', message: err.message, color: 'red' });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleChangeOrderStatus = async (orderId: string, newOrderStatus: string) => {
+    setIsUpdating(true);
+    try {
+      const response = await fetch(`/api/admin/orders/${orderId}/update-order-status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newOrderStatus }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Failed to update order status');
+      }
+      notifications.show({ title: 'Success', message: `Order status updated to ${newOrderStatus}.`, color: 'green' });
+      fetchOrders(currentPage, debouncedSearchTerm, selectedStatusFilter, dateRange); // Refresh data
+    } catch (err: any) {
+      notifications.show({ title: 'Error', message: err.message, color: 'red' });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+
   if (authStatus === 'loading' || (isLoading && authStatus === 'authenticated' && orders.length === 0 && !error) ) {
-     return (
-         <AdminLayout>
-             <LoadingOverlay visible={true} overlayProps={{ radius: 'sm', blur: 2, fixed: true }} />
-         </AdminLayout>
-     );
+     return <AdminLayout><LoadingOverlay visible={true} overlayProps={{ radius: 'sm', blur: 2, fixed: true }} /></AdminLayout>;
   }
   if (authStatus === 'unauthenticated') {
-     return <Text p="xl">Redirecting to login...</Text>;
+     return <Text p="xl">Redirecting to login...</Text>; // Or a more sophisticated redirect component
   }
+  // Ensure user has permission to be on this page at all (applies to whole page)
+  // This could be a more general "access admin" permission or specific "view orders"
+  const canViewPage = userRole && hasPermission(userRole, Permission.CREATE_ORDER); // Example: Using CREATE_ORDER as a proxy for now
+
+  if (!canViewPage && authStatus === 'authenticated') {
+    return (
+        <AdminLayout>
+            <Paper p="xl"><Title order={3}>Access Denied</Title><Text>You do not have permission to view this page.</Text></Paper>
+        </AdminLayout>
+    );
+  }
+
 
   const rows = orders.map((order) => {
     const customerName = order.customer && typeof order.customer !== 'string'
@@ -162,14 +241,17 @@ export default function OrdersPage() {
         <Table.Tr key={order._id}>
         <Table.Td>
            <Link href={`/admin/orders/${order._id}`} passHref legacyBehavior>
-               <Text component="a" c="blue.6" fw={500} size="sm">
-                   {order._id.substring(0, 8)}...
-               </Text>
+               <Text component="a" c="blue.6" fw={500} size="sm">{order._id.substring(0, 8)}...</Text>
            </Link>
         </Table.Td>
         <Table.Td>{customerName}</Table.Td>
         <Table.Td>{dayjs(order.createdAt).format('MMM D, YYYY h:mm A')}</Table.Td>
         <Table.Td>${order.totalAmount.toFixed(2)}</Table.Td>
+        <Table.Td>
+           <Badge color={getPaymentStatusColor(order.paymentStatus)} variant="light" radius="sm">
+               {order.paymentStatus.charAt(0).toUpperCase() + order.paymentStatus.slice(1)}
+           </Badge>
+        </Table.Td>
         <Table.Td>
            <Badge color={getStatusColor(order.status)} variant="light" radius="sm">
                {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
@@ -177,9 +259,49 @@ export default function OrdersPage() {
         </Table.Td>
         <Table.Td>{order.orderItems.reduce((acc, item) => acc + item.quantity, 0)}</Table.Td>
         <Table.Td>
-          <ActionIcon variant="subtle" color="blue" component={Link} href={`/admin/orders/${order._id}`} aria-label={`View order ${order._id}`}>
-            <IconEye size={18} />
-          </ActionIcon>
+            <Menu shadow="md" width={200} withinPortal position="bottom-end">
+                <Menu.Target>
+                    <ActionIcon variant="subtle" color="gray" aria-label="More options">
+                        <IconDotsVertical size={18} />
+                    </ActionIcon>
+                </Menu.Target>
+                <Menu.Dropdown>
+                    <Menu.Item leftSection={<IconEye size={14} />} component={Link} href={`/admin/orders/${order._id}`}>
+                        View Details
+                    </Menu.Item>
+                    <Menu.Item leftSection={<IconEdit size={14} />} component={Link} href={`/admin/orders/${order._id}/edit`} disabled> {/* TODO: Enable when edit page exists */}
+                        Edit Order
+                    </Menu.Item>
+                    <Menu.Divider />
+                    <Menu.Label>Payment Status</Menu.Label>
+                    <Menu.Item
+                        leftSection={<IconCircleCheck size={14} color="green" />}
+                        onClick={() => handleChangePaymentStatus(order._id, 'paid')}
+                        disabled={order.paymentStatus === 'paid' || isUpdating}
+                    >
+                        Mark as Paid
+                    </Menu.Item>
+                    <Menu.Item
+                        leftSection={<IconCircleX size={14} color="red" />}
+                        onClick={() => handleChangePaymentStatus(order._id, 'unpaid')}
+                        disabled={order.paymentStatus === 'unpaid' || isUpdating}
+                    >
+                        Mark as Unpaid
+                    </Menu.Item>
+                    <Menu.Divider />
+                    <Menu.Label>Order Status</Menu.Label>
+                    {VALID_ORDER_STATUSES_FOR_DROPDOWN.map(statusOption => (
+                        <Menu.Item
+                            key={statusOption.value}
+                            leftSection={<IconTruckDelivery size={14} />} // Generic icon, could be dynamic
+                            onClick={() => handleChangeOrderStatus(order._id, statusOption.value)}
+                            disabled={order.status === statusOption.value || isUpdating}
+                        >
+                            Set to {statusOption.label}
+                        </Menu.Item>
+                    ))}
+                </Menu.Dropdown>
+            </Menu>
         </Table.Td>
       </Table.Tr>
     );
@@ -190,7 +312,7 @@ export default function OrdersPage() {
     <AdminLayout>
       <Group justify="space-between" mb="xl">
         <Title order={2}>Orders</Title>
-        {userRole && hasPermission(userRole, Permission.CREATE_ORDER) && (
+        {userRole && hasPermission(userRole, Permission.CREATE_ORDER) && ( // Assuming CREATE_ORDER allows adding new ones
           <Button leftSection={<IconPlus size={16} />} component={Link} href="/admin/orders/new">
             Add New Order
           </Button>
@@ -205,15 +327,16 @@ export default function OrdersPage() {
                     leftSection={<IconSearch size={16} />}
                     value={searchTerm}
                     onChange={handleSearchChange}
+                    disabled={isLoading}
                 />
             </Grid.Col>
             <Grid.Col span={{ base: 12, md: 6, lg:3 }}>
                 <Select
                     placeholder="Filter by status"
                     leftSection={<IconFilter size={16} />}
-                    data={[{ label: 'All Statuses', value: '' }, ...ORDER_STATUSES.map(s => ({label: s.charAt(0).toUpperCase() + s.slice(1), value: s}))]}
-                    value={selectedStatus}
-                    onChange={handleStatusChange}
+                    data={[{ label: 'All Statuses', value: '' }, ...VALID_ORDER_STATUSES_FOR_DROPDOWN]}
+                    value={selectedStatusFilter}
+                    onChange={handleStatusFilterChange}
                     clearable
                 />
             </Grid.Col>
@@ -226,6 +349,7 @@ export default function OrdersPage() {
                     clearable
                     maxDate={dateRange[1] || undefined}
                     popoverProps={{ withinPortal: true }}
+                    disabled={isLoading}
                 />
             </Grid.Col>
             <Grid.Col span={{ base: 12, md: 6, lg:2.5 }}>
@@ -237,14 +361,15 @@ export default function OrdersPage() {
                     clearable
                     minDate={dateRange[0] || undefined}
                     popoverProps={{ withinPortal: true }}
+                    disabled={isLoading}
                 />
             </Grid.Col>
          </Grid>
       </Paper>
 
-      {error && !isLoading && (
+      {error && !isLoading && ( // Show error only if not loading
          <Alert title="Error Fetching Orders" color="red" icon={<IconAlertCircle />} withCloseButton onClose={() => setError(null)} mb="lg">
-             {error} Please try <Button variant="subtle" size="xs" onClick={() => fetchOrders(currentPage, debouncedSearchTerm, selectedStatus, dateRange)}>reloading</Button>.
+             {error} Please try <Button variant="subtle" size="xs" onClick={() => fetchOrders(currentPage, debouncedSearchTerm, selectedStatusFilter, dateRange)}>reloading</Button>.
          </Alert>
       )}
 

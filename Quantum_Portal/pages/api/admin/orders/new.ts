@@ -35,73 +35,101 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     await dbConnect();
 
     const {
-      customerName, // Full name
+      // customerName is now fullName from form, mapped to customerName for this API
+      // email and phoneNumber are top-level from form
+      customerName,
       email,
       phoneNumber,
-      shippingAddress, // Object: { street, city, postalCode, country, state? }
-      orderItems, // Array: [{ productId, name, price, quantity, image? }]
+      shippingAddress, // This is the complex object: { street, city, district, country, postalCode, fullName, phone, email (optional inside address too) }
+      orderItems,
       totalAmount,
-      paymentMethod, // string
-      status, // string, optional
+      paymentMethod,
+      status, // Optional: overall order status
+      paymentStatus, // Optional: payment status for the order
+      deliveryNote, // Optional
+      customerId: selectedCustomerId, // Optional: ID of a pre-selected customer
     } = req.body;
 
     // --- Basic Validation ---
-    if (!customerName || !email || !phoneNumber || !shippingAddress || !orderItems || !totalAmount) {
-      return res.status(400).json({ message: 'Missing required fields' });
+    // The form provides customerName (mapped from fullName), email, phoneNumber at top level.
+    // shippingAddress comes as an object.
+    if (!customerName || !phoneNumber || !shippingAddress || !orderItems || !totalAmount || !paymentMethod) {
+      return res.status(400).json({ message: 'Missing required fields. Customer name, phone, address, items, total, and payment method are essential.' });
     }
+    if (!shippingAddress.street || !shippingAddress.city || !shippingAddress.district || !shippingAddress.country || !shippingAddress.postalCode ) {
+        return res.status(400).json({ message: 'Incomplete shipping address object: street, city, district, postalCode, and country are required within shippingAddress.' });
+    }
+    // Validate fields that are now expected within shippingAddress for the Order model
+    if (!shippingAddress.fullName || !shippingAddress.phone) {
+        return res.status(400).json({ message: 'Shipping address object must also contain fullName and phone for the recipient.'});
+    }
+
     if (!Array.isArray(orderItems) || orderItems.length === 0) {
       return res.status(400).json({ message: 'Order items must be a non-empty array' });
     }
     if (typeof totalAmount !== 'number' || totalAmount <= 0) {
       return res.status(400).json({ message: 'Total amount must be a positive number' });
     }
-    if (!shippingAddress.street || !shippingAddress.city || !shippingAddress.postalCode || !shippingAddress.country) {
-        return res.status(400).json({ message: 'Incomplete shipping address: street, city, postalCode, and country are required.' });
+    // Phone number validation (from form's top-level phoneNumber)
+    if (typeof phoneNumber !== 'string' || !/^01\d{9}$/.test(phoneNumber)) {
+        return res.status(400).json({ message: 'Invalid phone number format. Must be 11 digits starting with 01.'});
     }
-    // Phone number basic validation (e.g., is a string of numbers)
-    if (typeof phoneNumber !== 'string' || !/^\+?[\d\s-]{10,15}$/.test(phoneNumber)) { // Basic international phone regex
-        return res.status(400).json({ message: 'Invalid phone number format.'});
-    }
-     // Email validation
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+     // Email validation (top-level, optional in form, but if provided, validate)
+    if (email && typeof email === 'string' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         return res.status(400).json({ message: 'Invalid email format.' });
     }
 
 
     // --- Customer Handling ---
-    let customer: ICustomer | null = await Customer.findOne({ email: email.toLowerCase() });
-    let customerId: mongoose.Types.ObjectId;
+    let finalCustomerId: mongoose.Types.ObjectId;
 
-    if (customer) {
-      customerId = customer._id;
-      // Optionally, update customer details if they've changed
-      // customer.name = customerName; customer.addresses = [shippingAddress]; await customer.save();
+    if (selectedCustomerId && mongoose.Types.ObjectId.isValid(selectedCustomerId)) {
+        // Optionally verify customer exists, but for now, trust valid ObjectId
+        const existingCustomer = await Customer.findById(selectedCustomerId);
+        if (!existingCustomer) {
+            return res.status(400).json({ message: 'Selected customer ID is invalid or customer not found.' });
+        }
+        finalCustomerId = new mongoose.Types.ObjectId(selectedCustomerId);
+        // TODO: Future: Optionally update existing customer's address if different and a flag is set.
     } else {
-      const nameParts = customerName.split(' ');
-      const firstName = nameParts[0];
-      const lastName = nameParts.slice(1).join(' ') || undefined;
-      const randomPassword = await generateRandomPassword();
+        // No valid selectedCustomerId, proceed with find by email or create new
+        if (email && typeof email === 'string') { // Email is required to find or create customer if no ID provided
+            let customer: ICustomer | null = await Customer.findOne({ email: email.toLowerCase() });
+            if (customer) {
+                finalCustomerId = customer._id;
+            } else {
+                // Create new customer
+                const nameParts = customerName.split(' ');
+                const firstName = nameParts[0];
+                const lastName = nameParts.slice(1).join(' ') || undefined;
+                const randomPassword = await generateRandomPassword();
 
-      const newCustomer = new Customer({
-        email: email.toLowerCase(),
-        password: randomPassword, // Customer model requires a password
-        firstName,
-        lastName,
-        // Storing the provided shippingAddress as the first address for the new customer
-        addresses: [{
-            street: shippingAddress.street,
-            city: shippingAddress.city,
-            state: shippingAddress.state || '', // Ensure state is not undefined
-            zipCode: shippingAddress.postalCode,
-            country: shippingAddress.country,
-            isDefaultShipping: true,
-            isDefaultBilling: true,
-        }],
-        // phoneNumber, // Customer model does not have a direct phone field, might add later or store in address
-        isActive: true,
-      });
-      await newCustomer.save();
-      customerId = newCustomer._id;
+                const newCustomer = new Customer({
+                    email: email.toLowerCase(),
+                    password: randomPassword,
+                    firstName,
+                    lastName,
+                    addresses: [{ // Save the detailed shipping address to the new customer
+                        street: shippingAddress.street,
+                        city: shippingAddress.city,
+                        state: shippingAddress.district, // Map district to Customer's 'state' field
+                        postalCode: shippingAddress.postalCode,
+                        country: shippingAddress.country,
+                        isDefaultShipping: true,
+                        isDefaultBilling: true,
+                    }],
+                    isActive: true,
+                });
+                await newCustomer.save();
+                finalCustomerId = newCustomer._id;
+            }
+        } else {
+            // Email is not provided and no customerId was selected - this case implies guest checkout or error
+            // For admin panel, we typically want to associate with a customer.
+            // If guest orders were allowed, this logic would differ.
+            // For now, require email if no customerId is given.
+             return res.status(400).json({ message: 'Email is required to find or create a customer if no customer is selected.' });
+        }
     }
 
     // --- Order Item Processing ---
@@ -110,31 +138,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         throw new Error('Invalid order item structure. Each item must have productId, name, price, and quantity.');
       }
       return {
-        product: new mongoose.Types.ObjectId(item.productId),
+        product: new mongoose.Types.ObjectId(item.productId), // Ensure productId is a valid ObjectId string
         name: item.name,
         price: item.price,
         quantity: item.quantity,
-        image: item.image || undefined, // Optional image
+        image: item.image || undefined,
       };
     });
 
     // --- Create New Order ---
-    const newOrder = new Order({
-      customer: customerId,
+    const newOrderData: Partial<IOrder> = {
+      customer: finalCustomerId,
       orderItems: processedOrderItems,
       totalAmount,
-      status: status || 'pending',
-      shippingAddress: { // Ensure this matches the Order model's structure
+      shippingAddress: { // Map directly from the validated shippingAddress object in request
+        fullName: shippingAddress.fullName,
+        phone: shippingAddress.phone,
+        email: shippingAddress.email, // Optional email for shipping contact
         street: shippingAddress.street,
         city: shippingAddress.city,
-        state: shippingAddress.state,
+        district: shippingAddress.district,
+        state: shippingAddress.state, // Optional broader region for shipping
         postalCode: shippingAddress.postalCode,
         country: shippingAddress.country,
       },
-      paymentMethod: paymentMethod || 'N/A', // Default if not provided
-      // createdBy: new mongoose.Types.ObjectId(session.user.id) // If you add this to Order model
-    });
+      paymentMethod: paymentMethod,
+      // Optional fields from request, model will apply defaults if not provided
+      ...(status && { status }),
+      ...(paymentStatus && { paymentStatus }),
+      ...(deliveryNote && { deliveryNote }),
+      // createdBy: new mongoose.Types.ObjectId((session.user as any).id) // If tracking admin who created order
+    };
 
+    const newOrder = new Order(newOrderData);
     await newOrder.save();
 
     // Populate customer and orderItems.product details if needed for the response
