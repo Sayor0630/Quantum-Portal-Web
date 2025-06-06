@@ -23,20 +23,30 @@ export interface IOrder extends Document {
   totalAmount: number;
   status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled' | 'refunded' | 'failed' | 'completed' | 'on-hold';
   shippingAddress: {
-    street: string;
+    fullName: string;
+    phone: string;
+    email?: string;
+    street: string; // For deliveryAddress (street/area)
     city: string;
-    state?: string;
+    district: string;
+    state?: string; // Optional, for broader region if needed
     postalCode: string;
     country: string;
   };
   billingAddress?: { // Optional, if different from shipping
+    fullName: string;
+    phone: string;
+    email?: string;
     street: string;
     city: string;
+    district: string;
     state?: string;
     postalCode: string;
     country: string;
   };
   paymentMethod?: string;
+  paymentStatus: 'unpaid' | 'paid';
+  deliveryNote?: string;
   paymentResult?: { // Store some payment gateway response details
     id: string;
     status: string;
@@ -45,7 +55,7 @@ export interface IOrder extends Document {
   };
   shippingPrice?: number;
   taxPrice?: number; // If you calculate taxes
-  isPaid?: boolean;
+  isPaid?: boolean; // Maintained for now, might be deprecated in favor of paymentStatus
   paidAt?: Date;
   isDelivered?: boolean;
   deliveredAt?: Date;
@@ -64,19 +74,37 @@ const OrderSchema: Schema<IOrder> = new Schema(
       default: 'pending',
       required: true,
     },
+    paymentStatus: {
+      type: String,
+      enum: ['unpaid', 'paid'],
+      default: 'unpaid',
+      required: true,
+    },
+    deliveryNote: {
+      type: String,
+      trim: true,
+    },
     shippingAddress: {
-      street: { type: String, required: true },
+      fullName: { type: String, required: true },
+      phone: { type: String, required: true },
+      email: { type: String },
+      street: { type: String, required: true }, // For deliveryAddress (street/area)
       city: { type: String, required: true },
-      state: { type: String },
+      district: { type: String, required: true },
+      state: { type: String }, // Optional
       postalCode: { type: String, required: true },
       country: { type: String, required: true },
     },
-    billingAddress: {
-      street: { type: String },
-      city: { type: String },
+    billingAddress: { // Optional, but if provided, follows the same structure
+      fullName: { type: String, required: false }, // Not required if billingAddress itself is optional
+      phone: { type: String, required: false },
+      email: { type: String },
+      street: { type: String, required: false },
+      city: { type: String, required: false },
+      district: { type: String, required: false },
       state: { type: String },
-      postalCode: { type: String },
-      country: { type: String },
+      postalCode: { type: String, required: false },
+      country: { type: String, required: false },
     },
     paymentMethod: { type: String },
     paymentResult: {

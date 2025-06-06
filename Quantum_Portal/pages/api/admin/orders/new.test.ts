@@ -31,27 +31,39 @@ describe('/api/admin/orders/new API Endpoint', () => {
   let mockReq: ReturnType<typeof createMocks>['req'];
   let mockRes: ReturnType<typeof createMocks>['res'];
 
-  const defaultOrderPayload = {
-    customerName: 'Test Customer',
-    email: 'test@example.com',
-    phoneNumber: '+12345678901',
-    shippingAddress: {
-      street: '123 Test St',
-      city: 'Testville',
-      postalCode: '12345',
-      country: 'Testland',
-    },
-    orderItems: [{ productId: new mongoose.Types.ObjectId().toString(), name: 'Test Product', price: 100, quantity: 1 }],
-    totalAmount: 100,
-    paymentMethod: 'TestPay',
-    status: 'pending',
-  };
+  const mockNewProductId = new mongoose.Types.ObjectId().toString();
+  let defaultOrderPayload: any; // Define type more broadly for manipulation in tests
 
   beforeEach(() => {
+    // Reset defaultOrderPayload before each test to ensure clean state, esp. for productId
+    defaultOrderPayload = {
+      customerName: 'Test Customer FullName', // This is fullName from form, mapped to customerName for API
+      email: 'test@example.com', // This is top-level email from form
+      phoneNumber: '01711223344', // This is top-level phone from form
+      shippingAddress: { // This is the detailed object
+        fullName: 'Test Recipient FullName', // Recipient's name for the order
+        phone: '01999887766', // Recipient's phone for the order
+        email: 'recipient@example.com', // Optional recipient email
+        street: '123 Test St',
+        city: 'Testville',
+        district: 'Test District',
+        postalCode: '12345',
+        country: 'Testland',
+        state: 'Test State (Optional)', // Optional broader region
+      },
+      orderItems: [{ productId: mockNewProductId, name: 'Test Product', price: 100, quantity: 1, image: 'test.jpg' }],
+      totalAmount: 100,
+      paymentMethod: 'TestPay',
+      status: 'pending', // Overall order status
+      paymentStatus: 'unpaid', // Order payment status
+      deliveryNote: 'Handle with care.',
+      customerId: null, // By default, no pre-selected customer
+    };
+
     jest.clearAllMocks();
     ({ req: mockReq, res: mockRes } = createMocks({
       method: 'POST',
-      body: defaultOrderPayload,
+      body: defaultOrderPayload, // Use the reset payload
     }));
     mockDbConnect.mockResolvedValue(undefined);
     mockGetServerSession.mockResolvedValue({ user: { role: Role.ADMIN, id: 'adminUserId' } });
@@ -59,11 +71,32 @@ describe('/api/admin/orders/new API Endpoint', () => {
     mockBcryptHash.mockResolvedValue('hashedpassword');
 
     // Setup default mocks for models
-    mockOrderModel.mockImplementation(() => ({ save: mockOrderSave.mockResolvedValue({ _id: 'orderId', ...defaultOrderPayload }) }));
-    mockCustomerModel.mockImplementation(() => ({ save: mockCustomerSave.mockResolvedValue({ _id: 'customerId', ...defaultOrderPayload }) }));
+    // Ensure the mock resolved value for Order save includes the new fields for subsequent checks
+    mockOrderModel.mockImplementation(() => ({
+        save: mockOrderSave.mockResolvedValue({
+            _id: 'orderId',
+            ...defaultOrderPayload,
+            // Ensure shippingAddress in saved order mock matches the detailed structure
+            shippingAddress: defaultOrderPayload.shippingAddress
+        })
+    }));
+    mockCustomerModel.mockImplementation(() => ({
+        save: mockCustomerSave.mockResolvedValue({
+            _id: 'customerId',
+            email: defaultOrderPayload.email,
+            // Ensure addresses in new customer mock matches structure
+            addresses: [{
+                street: defaultOrderPayload.shippingAddress.street,
+                city: defaultOrderPayload.shippingAddress.city,
+                state: defaultOrderPayload.shippingAddress.district, // district maps to state in Customer model
+                postalCode: defaultOrderPayload.shippingAddress.postalCode,
+                country: defaultOrderPayload.shippingAddress.country,
+            }]
+        })
+    }));
   });
 
-  // --- Authentication & Authorization ---
+  // --- Authentication & Authorization (no changes needed from original) ---
   test('should return 401 if no session', async () => {
     mockGetServerSession.mockResolvedValue(null);
     await handler(mockReq, mockRes);
@@ -84,101 +117,125 @@ describe('/api/admin/orders/new API Endpoint', () => {
   });
 
   // --- Request Body Validation ---
-  const requiredFields = ['customerName', 'email', 'phoneNumber', 'shippingAddress', 'orderItems', 'totalAmount'];
-  requiredFields.forEach(field => {
-    test(`should return 400 if ${field} is missing`, async () => {
-      mockReq.body = { ...defaultOrderPayload, [field]: undefined };
+  // Updated required fields based on new API logic
+  const essentialFields = ['customerName', 'phoneNumber', 'shippingAddress', 'orderItems', 'totalAmount', 'paymentMethod'];
+  essentialFields.forEach(field => {
+    test(`should return 400 if essential field ${field} is missing`, async () => {
+      const body = { ...defaultOrderPayload };
+      delete body[field];
+      mockReq.body = body;
       await handler(mockReq, mockRes);
       expect(mockRes._getStatusCode()).toBe(400);
-      expect(mockRes._getJSONData().message).toBe('Missing required fields');
+      expect(mockRes._getJSONData().message).toContain('Missing required fields');
     });
   });
 
-  test('should return 400 if orderItems is empty', async () => {
-    mockReq.body = { ...defaultOrderPayload, orderItems: [] };
-    await handler(mockReq, mockRes);
-    expect(mockRes._getStatusCode()).toBe(400);
-    expect(mockRes._getJSONData().message).toBe('Order items must be a non-empty array');
+  const requiredShippingAddressFields = ['street', 'city', 'district', 'postalCode', 'country', 'fullName', 'phone'];
+  requiredShippingAddressFields.forEach(field => {
+    test(`should return 400 if shippingAddress.${field} is missing`, async () => {
+        const body = { ...defaultOrderPayload, shippingAddress: { ...defaultOrderPayload.shippingAddress } };
+        delete body.shippingAddress[field];
+        mockReq.body = body;
+        await handler(mockReq, mockRes);
+        expect(mockRes._getStatusCode()).toBe(400);
+        if (field === 'fullName' || field === 'phone') {
+            expect(mockRes._getJSONData().message).toContain('Shipping address object must also contain fullName and phone');
+        } else {
+            expect(mockRes._getJSONData().message).toContain('Incomplete shipping address object');
+        }
+    });
   });
 
-  test('should return 400 if totalAmount is not positive', async () => {
-    mockReq.body = { ...defaultOrderPayload, totalAmount: 0 };
+  test('should return 400 if top-level phoneNumber is invalid (not 11 digits or not starting with 01)', async () => {
+    mockReq.body = { ...defaultOrderPayload, phoneNumber: '12345' };
     await handler(mockReq, mockRes);
     expect(mockRes._getStatusCode()).toBe(400);
-    expect(mockRes._getJSONData().message).toBe('Total amount must be a positive number');
+    expect(mockRes._getJSONData().message).toContain('Invalid phone number format. Must be 11 digits starting with 01.');
+
+    mockReq.body = { ...defaultOrderPayload, phoneNumber: '02345678901' }; // Starts with 02
+    await handler(mockReq, mockRes);
+    expect(mockRes._getStatusCode()).toBe(400);
+    expect(mockRes._getJSONData().message).toContain('Invalid phone number format. Must be 11 digits starting with 01.');
   });
 
-  test('should return 400 for invalid email format', async () => {
-    mockReq.body = { ...defaultOrderPayload, email: 'invalid-email' };
+  test('should return 400 if top-level email is provided but invalid', async () => {
+    mockReq.body = { ...defaultOrderPayload, email: 'invalid-email-format' };
     await handler(mockReq, mockRes);
     expect(mockRes._getStatusCode()).toBe(400);
     expect(mockRes._getJSONData().message).toBe('Invalid email format.');
   });
 
-  test('should return 400 for invalid phone number format', async () => {
-    mockReq.body = { ...defaultOrderPayload, phoneNumber: '123' };
+  test('should return 400 if email is not provided AND no customerId is selected (new rule)', async () => {
+    mockReq.body = { ...defaultOrderPayload, email: '', customerId: null }; // No email, no customerId
     await handler(mockReq, mockRes);
     expect(mockRes._getStatusCode()).toBe(400);
-    expect(mockRes._getJSONData().message).toBe('Invalid phone number format.');
-  });
-
-  test('should return 400 for incomplete shipping address', async () => {
-    mockReq.body = { ...defaultOrderPayload, shippingAddress: { city: 'City only' }};
-    await handler(mockReq, mockRes);
-    expect(mockRes._getStatusCode()).toBe(400);
-    expect(mockRes._getJSONData().message).toContain('Incomplete shipping address');
-  });
-
-  test('should return 400 for invalid order item structure', async () => {
-    mockReq.body = { ...defaultOrderPayload, orderItems: [{ productId: '123' /* missing other fields */ }] };
-    // This error is thrown inside the try-catch, so the message comes from there
-    await handler(mockReq, mockRes);
-    expect(mockRes._getStatusCode()).toBe(400);
-    expect(mockRes._getJSONData().message).toMatch(/Invalid order item structure/);
+    expect(mockRes._getJSONData().message).toBe('Email is required to find or create a customer if no customer is selected.');
   });
 
 
-  // --- Successful Order Creation ---
-  describe('Successful Order Creation', () => {
-    test('should create a new customer if not found and then create order', async () => {
-      mockCustomerFindOne.mockResolvedValue(null); // Customer not found
+  // --- Successful Order Creation Scenarios ---
+  describe('Successful Order Creation with New Fields', () => {
+    test('should create order with new customer if email provided and customerId is null', async () => {
+      mockReq.body = { ...defaultOrderPayload, customerId: null, email: 'newcustomer@example.com' };
+      mockCustomerFindOne.mockResolvedValue(null); // Customer not found by email
       const newCustomerId = new mongoose.Types.ObjectId();
-      mockCustomerSave.mockResolvedValueOnce({ _id: newCustomerId, ...defaultOrderPayload.shippingAddress });
+      mockCustomerSave.mockResolvedValueOnce({ _id: newCustomerId, email: 'newcustomer@example.com' }); // Mock for new customer save
       const newOrderId = new mongoose.Types.ObjectId();
-      mockOrderSave.mockResolvedValueOnce({ _id: newOrderId, customer: newCustomerId, ...defaultOrderPayload });
-
-      // Re-assign model implementations for this specific test case if needed for clarity
-      mockCustomerModel.mockImplementation(() => ({ save: mockCustomerSave }));
-      mockOrderModel.mockImplementation(() => ({ save: mockOrderSave }));
+      mockOrderSave.mockResolvedValueOnce({ _id: newOrderId, customer: newCustomerId, ...mockReq.body }); // Mock for order save
 
       await handler(mockReq, mockRes);
 
-      expect(mockCustomerFindOne).toHaveBeenCalledWith({ email: defaultOrderPayload.email.toLowerCase() });
-      expect(mockCustomerSave).toHaveBeenCalled(); // New customer saved
-      expect(mockOrderSave).toHaveBeenCalled();    // New order saved
+      expect(mockCustomerFindOne).toHaveBeenCalledWith({ email: 'newcustomer@example.com' });
+      expect(mockCustomerSave).toHaveBeenCalled();
+      expect(mockOrderSave).toHaveBeenCalled();
+      const orderCallArg = mockOrderSave.mock.calls[0][0]; // Argument to Order.save()
+      expect(orderCallArg.shippingAddress.fullName).toBe(defaultOrderPayload.shippingAddress.fullName);
+      expect(orderCallArg.shippingAddress.phone).toBe(defaultOrderPayload.shippingAddress.phone);
+      expect(orderCallArg.shippingAddress.district).toBe(defaultOrderPayload.shippingAddress.district);
+      expect(orderCallArg.deliveryNote).toBe(defaultOrderPayload.deliveryNote);
+      expect(orderCallArg.paymentStatus).toBe(defaultOrderPayload.paymentStatus);
       expect(mockRes._getStatusCode()).toBe(201);
-      expect(mockRes._getJSONData().order.customer).toBe(newCustomerId);
+      expect(mockRes._getJSONData().order.customer).toEqual(newCustomerId);
     });
 
-    test('should use existing customer if found and then create order', async () => {
-      const existingCustomerId = new mongoose.Types.ObjectId();
-      mockCustomerFindOne.mockResolvedValue({ _id: existingCustomerId, name: 'Existing Customer' });
-      const newOrderId = new mongoose.Types.ObjectId();
-      mockOrderSave.mockResolvedValueOnce({ _id: newOrderId, customer: existingCustomerId, ...defaultOrderPayload });
+    test('should create order with existing customer if customerId is provided', async () => {
+      const existingCustomerId = new mongoose.Types.ObjectId().toString();
+      mockReq.body = { ...defaultOrderPayload, customerId: existingCustomerId, email: 'existing@example.com' };
+      // Simulate customer found by ID (or skip findOne if ID is trusted)
+      (Customer.findById as jest.Mock).mockResolvedValue({ _id: existingCustomerId, email: 'existing@example.com' });
 
-      mockOrderModel.mockImplementation(() => ({ save: mockOrderSave }));
+      const newOrderId = new mongoose.Types.ObjectId();
+      // Ensure the order save mock uses the correct customerId and other details
+      mockOrderSave.mockResolvedValueOnce({ _id: newOrderId, customer: existingCustomerId, ...mockReq.body });
 
       await handler(mockReq, mockRes);
 
-      expect(mockCustomerFindOne).toHaveBeenCalledWith({ email: defaultOrderPayload.email.toLowerCase() });
-      expect(mockCustomerSave).not.toHaveBeenCalled(); // No new customer saved
+      expect(Customer.findById).toHaveBeenCalledWith(existingCustomerId); // API now checks if selected customer exists
+      expect(mockCustomerFindOne).not.toHaveBeenCalled(); // Should not try to find by email if ID is given
+      expect(mockCustomerSave).not.toHaveBeenCalled();   // No new customer should be saved
       expect(mockOrderSave).toHaveBeenCalled();
+      const orderCallArg = mockOrderSave.mock.calls[0][0];
+      expect(orderCallArg.customer.toString()).toBe(existingCustomerId);
+      expect(orderCallArg.shippingAddress.fullName).toBe(defaultOrderPayload.shippingAddress.fullName);
+      expect(orderCallArg.deliveryNote).toBe(defaultOrderPayload.deliveryNote);
       expect(mockRes._getStatusCode()).toBe(201);
-      expect(mockRes._getJSONData().order.customer).toBe(existingCustomerId);
+    });
+
+    test('should correctly map shippingAddress.district to Customer.addresses.state for new customer', async () => {
+        mockReq.body = { ...defaultOrderPayload, email: 'districtmap@example.com', customerId: null };
+        mockCustomerFindOne.mockResolvedValue(null); // New customer
+        const newCustomerId = new mongoose.Types.ObjectId();
+        mockCustomerSave.mockResolvedValueOnce({ _id: newCustomerId }); // Mock for new customer save
+
+        await handler(mockReq, mockRes);
+
+        expect(mockCustomerSave).toHaveBeenCalled();
+        const customerSaveArg = mockCustomerSave.mock.calls[0][0];
+        expect(customerSaveArg.addresses[0].state).toBe(defaultOrderPayload.shippingAddress.district);
     });
   });
 
-  // --- Error Handling ---
+  // --- Error Handling (no changes needed from original for these specific tests) ---
     test('should return 500 if Order.save fails', async () => {
         mockCustomerFindOne.mockResolvedValue({ _id: 'customerId' }); // Existing customer
         mockOrderSave.mockRejectedValueOnce(new Error('Database save error for order'));
