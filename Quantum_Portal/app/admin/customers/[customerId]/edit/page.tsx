@@ -76,7 +76,8 @@ interface FetchedCustomerData {
 export default function EditCustomerPage() {
   const router = useRouter();
   const params = useParams();
-  const customerId = params?.id as string;
+  // Correctly extract customerId from params, matching the directory name [customerId]
+  const customerId = params?.customerId as string;
 
   const { data: session, status: authStatus } = useSession();
   const [isLoadingData, setIsLoadingData] = useState(true);
