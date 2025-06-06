@@ -46,8 +46,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           .populate({
              path: 'orderItems.product',
              model: Product,
-             select: 'name sku price images category tags',
-             populate: { path: 'category', select: 'name slug' }
+             select: 'name sku price images category tags'
           }).lean(); // Use lean for GET requests for performance
 
         if (!order) {
@@ -108,6 +107,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             if (!item.productId || !mongoose.Types.ObjectId.isValid(item.productId) || !item.name || typeof item.price !== 'number' || typeof item.quantity !== 'number' || item.quantity <= 0) {
                 return res.status(400).json({ success: false, message: 'Invalid order item structure. Each item must have valid productId, name, price, and quantity > 0.' });
             }
+            // Validate variant product fields if present
+            if (item.isVariantProduct && !item.variantId) {
+                return res.status(400).json({ success: false, message: 'Variant products must have a variantId.' });
+            }
         }
 
         const orderToUpdate = await Order.findById(orderObjectId);
@@ -161,6 +164,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         orderToUpdate.orderItems = orderItems.map(item => ({
             ...item,
             product: new mongoose.Types.ObjectId(item.productId),
+            // Ensure variant product fields are properly preserved
+            isVariantProduct: item.isVariantProduct || false,
+            variantId: item.variantId || undefined,
         })) as any; // Cast if IOrderItem structure mismatch due to product not being populated
 
         // Recalculate totalAmount based on the new/updated orderItems
@@ -175,11 +181,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           .populate({
              path: 'orderItems.product',
              model: Product,
-             select: 'name sku price images category tags',
-             populate: { path: 'category', select: 'name slug' }
+             select: 'name sku price images category tags'
           });
 
-        return res.status(200).json(populatedOrder);
+        return res.status(200).json({ success: true, data: populatedOrder });
       } catch (error) {
         console.error('Error updating order:', error);
         return res.status(500).json({ message: 'Error updating order', error: (error as Error).message });

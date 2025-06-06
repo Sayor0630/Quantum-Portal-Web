@@ -20,7 +20,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         await connectToDatabase();
         let product;
 
-        const publicFieldsToSelect = 'name description price sku images category tags customAttributes slug seoTitle seoDescription isPublished';
+        const publicFieldsToSelect = 'name description price sku images category tags customAttributes slug seoTitle seoDescription isPublished hasVariants attributeDefinitions variants stockQuantity';
         const categoryPopulation = { path: 'category', select: 'name slug isPublished' };
 
 

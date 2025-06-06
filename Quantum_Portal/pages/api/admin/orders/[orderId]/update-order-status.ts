@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../../../auth/[...nextauth]';
 import dbConnect from '../../../../../lib/dbConnect';
 import Order, { IOrder } from '../../../../../models/Order'; // IOrder might be useful for status enum if exported
+import Customer from '../../../../../models/Customer';
+import Product from '../../../../../models/Product';
 import { hasPermission, Role, Permission } from '../../../../../lib/permissions';
 import mongoose from 'mongoose';
 
@@ -33,9 +35,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     await dbConnect();
 
-    const { query: { id }, body } = req;
+    const { query: { orderId }, body } = req;
 
-    if (!id || typeof id !== 'string' || !mongoose.Types.ObjectId.isValid(id)) {
+    if (!orderId || typeof orderId !== 'string' || !mongoose.Types.ObjectId.isValid(orderId)) {
       return res.status(400).json({ message: 'Invalid order ID.' });
     }
 
@@ -47,7 +49,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    const order = await Order.findById(id);
+    const order = await Order.findById(orderId);
 
     if (!order) {
       return res.status(404).json({ message: 'Order not found.' });
@@ -71,7 +73,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const updatedOrder = await order.save();
 
-    return res.status(200).json({ success: true, data: updatedOrder });
+    // Populate the order with product and customer data for consistent response
+    const populatedOrder = await Order.findById(updatedOrder._id)
+      .populate({ path: 'customer', model: Customer, select: 'firstName lastName email addresses' })
+      .populate({
+        path: 'orderItems.product',
+        model: Product,
+        select: 'name sku price images category tags'
+      });
+
+    return res.status(200).json({ success: true, data: populatedOrder });
 
   } catch (error: any) {
     console.error('Error updating order status:', error);

@@ -42,21 +42,62 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             name, description, price, sku, stockQuantity, category,
             tags, customAttributes, images,
             seoTitle, seoDescription,
-            slug, isPublished // Added slug and isPublished
+            slug, isPublished, // Added slug and isPublished
+            hasVariants, attributeDefinitions, variants // New variant fields
         } = req.body;
 
         const updateData: any = {};
 
         if (name !== undefined) updateData.name = name;
         if (description !== undefined) updateData.description = description;
-        if (price !== undefined) updateData.price = price;
-        if (stockQuantity !== undefined) updateData.stockQuantity = stockQuantity;
+        
+        // Handle price and stock for variant products
+        if (hasVariants !== undefined && hasVariants) {
+          // For variant products, always use 0 for price
+          updateData.price = 0;
+          
+          // Auto-generate SKU for variant products based on product name
+          if (name !== undefined) {
+            updateData.sku = name
+              .toLowerCase()
+              .replace(/\s+/g, '-')
+              .replace(/[^\w-]+/g, '')
+              .replace(/--+/g, '-')
+              .replace(/^-+/, '')
+              .replace(/-+$/, '');
+          } else {
+            updateData.sku = ''; // Clear SKU if name not provided
+          }
+          
+          // Calculate total stock across all variants
+          if (variants && variants.length > 0) {
+            updateData.stockQuantity = variants.reduce((total: number, variant: any) => {
+              return total + (variant.stockQuantity || 0);
+            }, 0);
+          } else {
+            updateData.stockQuantity = 0;
+          }
+        } else if (hasVariants === false) {
+          // For non-variant products, use provided values
+          if (price !== undefined) updateData.price = price;
+          if (stockQuantity !== undefined) updateData.stockQuantity = stockQuantity;
+        } else {
+          // If hasVariants is not specified, handle price and stock normally
+          if (price !== undefined) updateData.price = price;
+          if (stockQuantity !== undefined) updateData.stockQuantity = stockQuantity;
+        }
+        
         if (tags !== undefined) updateData.tags = tags || [];
-        if (customAttributes !== undefined) updateData.customAttributes = customAttributes || {};
         if (images !== undefined) updateData.images = images || [];
         if (seoTitle !== undefined) updateData.seoTitle = seoTitle || '';
         if (seoDescription !== undefined) updateData.seoDescription = seoDescription || '';
         if (isPublished !== undefined) updateData.isPublished = isPublished; // Add isPublished
+        
+        // Handle variant system fields
+        if (hasVariants !== undefined) updateData.hasVariants = hasVariants;
+        if (attributeDefinitions !== undefined) updateData.attributeDefinitions = attributeDefinitions || {};
+        if (variants !== undefined) updateData.variants = variants || [];
+        
         if (slug !== undefined) { // If slug is explicitly sent, use it (model hook will format)
             updateData.slug = slug;
         } else if (name !== undefined) {
@@ -84,7 +125,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             updateData.category = null;
         }
 
-        if (sku) {
+        if (sku && !hasVariants) {
             const existingProductBySku = await Product.findOne({ sku: sku, _id: { $ne: productObjectId } });
             if (existingProductBySku) {
                 return res.status(409).json({ message: 'Another product with this SKU already exists.' });

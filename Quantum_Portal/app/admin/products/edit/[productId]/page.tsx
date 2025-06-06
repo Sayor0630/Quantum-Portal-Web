@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { IconDeviceFloppy, IconAlertCircle, IconX, IconUpload, IconPhoto, IconSeo, IconArrowLeft } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { useSession } from 'next-auth/react';
+import VariantManager from '../../_components/VariantManager';
 
 interface AttributeDefinition {
   _id: string;
@@ -27,6 +28,23 @@ interface UploadedImageInfo {
   public_id: string;
 }
 
+// New interfaces for variant system
+interface SelectedAttribute {
+  attributeId: string;
+  name: string;
+  selectedValues: string[];
+}
+
+interface ProductVariant {
+  _id?: string;
+  attributeCombination: { [key: string]: string };
+  sku?: string;
+  price?: number;
+  stockQuantity: number;
+  isActive: boolean;
+  images?: Array<{ url: string; public_id: string }>;
+}
+
 interface ProductDataFromAPI { // For data fetched from API
     _id: string;
     name: string;
@@ -37,11 +55,13 @@ interface ProductDataFromAPI { // For data fetched from API
     stockQuantity: number;
     category?: { _id: string; name: string; } | string;
     tags: string[];
-    customAttributes: Record<string, string>;
     images: string[];
     seoTitle?: string;
     seoDescription?: string;
     isPublished: boolean; // Added
+    hasVariants?: boolean;
+    attributeDefinitions?: { [key: string]: string[] };
+    variants?: ProductVariant[];
 }
 
 const generateSlugFromName = (name: string): string => {
@@ -49,21 +69,27 @@ const generateSlugFromName = (name: string): string => {
     return name.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '').replace(/--+/g, '-').replace(/^-+/, '').replace(/-+$/, '');
 };
 
-// Yup validation schema
-const schema = Yup.object().shape({
+// Yup validation schema - conditional based on variant system
+const createValidationSchema = (hasVariants: boolean) => Yup.object().shape({
   name: Yup.string().required('Product name is required'),
-  slug: Yup.string().matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug must be lowercase alphanumeric with hyphens.').required('Slug is required'), // Added
+  slug: Yup.string().matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug must be lowercase alphanumeric with hyphens.').required('Slug is required'),
   description: Yup.string().required('Description is required'),
-  price: Yup.number().min(0, 'Price must be non-negative').required('Price is required').typeError('Price must be a number'),
-  sku: Yup.string().required('SKU is required'),
-  stockQuantity: Yup.number().integer('Stock must be an integer').min(0, 'Stock must be non-negative').required('Stock quantity is required').typeError('Stock must be a number'),
+  price: hasVariants ? 
+    Yup.number().min(0, 'Base price must be non-negative').optional() : 
+    Yup.number().min(0, 'Price must be non-negative').required('Price is required').typeError('Price must be a number'),
+  sku: hasVariants ? 
+    Yup.string().optional() : 
+    Yup.string().required('SKU is required'),
+  stockQuantity: hasVariants ? 
+    Yup.number().integer('Stock must be an integer').min(0, 'Stock must be non-negative').optional() : 
+    Yup.number().integer('Stock must be an integer').min(0, 'Stock must be non-negative').required('Stock quantity is required').typeError('Stock must be a number'),
   category: Yup.string().nullable(),
   tags: Yup.array().of(Yup.string()).ensure(),
-  customAttributes: Yup.object().optional(),
   images: Yup.array().of(Yup.string().url("Each image must be a valid URL")).optional(),
   seoTitle: Yup.string().optional().trim().max(70, 'SEO Title should be 70 characters or less'),
   seoDescription: Yup.string().optional().trim().max(160, 'SEO Description should be 160 characters or less'),
-  isPublished: Yup.boolean(), // Added
+  isPublished: Yup.boolean(),
+  hasVariants: Yup.boolean(),
 });
 
 export default function EditProductPage() {
@@ -86,6 +112,13 @@ export default function EditProductPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  // Variant system state
+  const [selectedAttributes, setSelectedAttributes] = useState<SelectedAttribute[]>([]);
+  const [variants, setVariants] = useState<ProductVariant[]>([]);
+  const [hasVariants, setHasVariants] = useState(false);
+  const [variantDataChanged, setVariantDataChanged] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+
   const form = useForm({
     initialValues: {
       name: '',
@@ -96,14 +129,24 @@ export default function EditProductPage() {
       stockQuantity: 0,
       category: '',
       tags: [] as string[],
-      customAttributes: {} as Record<string, string | null>,
       images: [] as string[],
       seoTitle: '',
       seoDescription: '',
       isPublished: false, // Added
+      hasVariants: false,
     },
-    validate: yupResolver(schema),
+    validate: yupResolver(createValidationSchema(hasVariants)),
+    validateInputOnChange: hasSubmitted,
+    validateInputOnBlur: hasSubmitted,
   });
+
+  // Update form validation when hasVariants changes, but only if user has already submitted
+  useEffect(() => {
+    if (hasSubmitted) {
+      form.validate();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasVariants, hasSubmitted]);
 
   // Slug auto-generation logic for edit page
   const productNameForSlug = form.values.name;
@@ -139,7 +182,7 @@ export default function EditProductPage() {
   }, [authStatus, router]); // Added router
 
   useEffect(() => {
-    if (productId && authStatus === 'authenticated') {
+    if (productId && authStatus === 'authenticated' && !isMetaLoading) {
         const fetchProductData = async () => {
             setIsFetchingProduct(true); setApiError(null);
             try {
@@ -155,12 +198,34 @@ export default function EditProductPage() {
                     stockQuantity: productData.stockQuantity,
                     category: typeof productData.category === 'string' ? productData.category : productData.category?._id || '',
                     tags: productData.tags || [],
-                    customAttributes: productData.customAttributes || {},
                     images: productData.images || [],
                     seoTitle: productData.seoTitle || '',
                     seoDescription: productData.seoDescription || '',
                     isPublished: productData.isPublished || false, // Populate isPublished
+                    hasVariants: productData.hasVariants || false,
                 });
+                
+                // Load variant data
+                setHasVariants(productData.hasVariants || false);
+                
+                if (productData.hasVariants && productData.attributeDefinitions) {
+                  // Convert attributeDefinitions to selectedAttributes format
+                  const selectedAttrs: SelectedAttribute[] = Object.entries(productData.attributeDefinitions).map(([name, values]) => {
+                    // Find the attribute definition to get the ID
+                    const attrDef = attributeDefinitions.find(attr => attr.name === name);
+                    return {
+                      attributeId: attrDef?._id || name, // Fallback to name if not found
+                      name,
+                      selectedValues: values as string[]
+                    };
+                  });
+                  setSelectedAttributes(selectedAttrs);
+                }
+                
+                if (productData.variants) {
+                  setVariants(productData.variants);
+                }
+                
                 setUploadedImages(productData.images?.map((url: string, index: number) => ({ url, public_id: `existing_image_${productId}_${index}` })) || []);
                 form.resetDirty();
                 setIsSlugManuallyModified(false); // Reset manual modification flag
@@ -172,7 +237,7 @@ export default function EditProductPage() {
         fetchProductData();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productId, authStatus]);
+  }, [productId, authStatus, isMetaLoading]);
 
   const handleFileSelectAndUpload = async (files: File[]) => { /* ... (image upload logic remains same) ... */
     if (!files || files.length === 0) return;
@@ -206,28 +271,54 @@ export default function EditProductPage() {
   };
 
   const handleSubmit = async (values: typeof form.values) => {
+    setHasSubmitted(true);
     setIsLoading(true); setApiError(null);
     try {
+      // For variant products, use 0 for price and calculate stock
+      let productPrice = values.price;
+      let productStock = values.stockQuantity;
+      
+      if (hasVariants) {
+        // For variant products, always use 0 for price
+        productPrice = 0;
+        
+        // Calculate total stock across all variants
+        if (variants.length > 0) {
+          productStock = variants.reduce((total, variant) => {
+            return total + (variant.stockQuantity || 0);
+          }, 0);
+        } else {
+          productStock = 0;
+        }
+      }
+
       const payload = {
         name: values.name,
         slug: values.slug, // Added
         isPublished: values.isPublished, // Added
         description: values.description,
-        price: values.price,
-        sku: values.sku,
-        stockQuantity: values.stockQuantity,
+        price: productPrice,
+        ...(hasVariants ? {} : { sku: values.sku }), // Only include SKU for non-variant products
+        stockQuantity: productStock,
         category: values.category || null,
         tags: values.tags,
-        customAttributes: Object.fromEntries( Object.entries(values.customAttributes).filter(([_, value]) => value !== null && value !== '') ),
         images: uploadedImages.map(img => img.url),
         seoTitle: values.seoTitle || undefined,
         seoDescription: values.seoDescription || undefined,
+        // New variant fields
+        hasVariants,
+        attributeDefinitions: hasVariants ? 
+          Object.fromEntries(
+            selectedAttributes.map(attr => [attr.name, attr.selectedValues])
+          ) : {},
+        variants: hasVariants ? variants : [],
       };
       const response = await fetch(`/api/admin/products/${productId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || `HTTP error! status: ${response.status}`);
       notifications.show({ title: 'Product Updated', message: `Product "${data.name}" updated.`, color: 'green', icon: <IconDeviceFloppy /> });
       form.resetDirty(data);
+      setVariantDataChanged(false); // Reset variant change tracking
       setUploadedImages(data.images?.map((url: string, index: number) => ({ url, public_id: uploadedImages.find(u => u.url === url)?.public_id || `existing_image_${productId}_${index}`})) || []);
     } catch (err: any) {
       setApiError(err.message || 'An unexpected error occurred.');
@@ -282,33 +373,44 @@ export default function EditProductPage() {
             }}
             mb="md" />
         <Textarea label="Description" placeholder="Detailed description..." required autosize minRows={3} {...form.getInputProps('description')} mb="md" />
-        <Grid mb="md">
-            <Grid.Col span={{base:12, md:4}}><NumberInput label="Price" placeholder="0.00" required decimalScale={2} step={0.01} min={0} leftSection="$" {...form.getInputProps('price')} /></Grid.Col>
-            <Grid.Col span={{base:12, md:4}}><TextInput label="SKU" placeholder="e.g., TSHIRT-BLK-LG" required {...form.getInputProps('sku')} /></Grid.Col>
-            <Grid.Col span={{base:12, md:4}}><NumberInput label="Stock Quantity" placeholder="0" required min={0} step={1} allowDecimal={false} {...form.getInputProps('stockQuantity')} /></Grid.Col>
-        </Grid>
 
-        <Switch label="Product is Published (visible on storefront)" {...form.getInputProps('isPublished', { type: 'checkbox' })} mb="md" />
-        <Divider my="lg" label="Categorization, Attributes & Images" labelPosition="center" />
+        <Switch label="Publish Product (Visible on storefront)" {...form.getInputProps('isPublished', { type: 'checkbox' })} mb="md" />
+        <Divider my="lg" label="Categorization & Details" labelPosition="center" />
 
         <Select label="Category" placeholder="Select a category" data={categoriesList.map(cat => ({ value: cat._id, label: cat.name }))} searchable clearable disabled={isMetaLoading} {...form.getInputProps('category')} mb="md" />
         <TagsInput label="Tags" placeholder="Enter tags" description="Press Enter or comma" clearable {...form.getInputProps('tags')} mb="md" />
 
-        <Title order={4} mt="lg" mb="sm">Custom Attributes</Title>
-        {isMetaLoading && <Text c="dimmed" size="sm">Loading attributes...</Text>}
-        {!isMetaLoading && attributeDefinitions.length === 0 && <Text c="dimmed" size="sm">No attributes defined.</Text>}
-        <Grid mb="md">
-            {attributeDefinitions.map((attrDef) => (
-                <Grid.Col span={{ base: 12, md: 6 }} key={attrDef._id}>
-                    <Select label={attrDef.name} placeholder={`Select ${attrDef.name}`} data={attrDef.values.map(val => ({ value: val, label: val }))} clearable value={form.values.customAttributes[attrDef.name] || null}
-                        onChange={(value) => {
-                            const newAttrs = { ...form.values.customAttributes };
-                            if (value) newAttrs[attrDef.name] = value; else delete newAttrs[attrDef.name];
-                            form.setFieldValue('customAttributes', newAttrs);
-                        }} mb="sm" />
-                </Grid.Col>
-            ))}
-        </Grid>
+        <Divider my="lg" label="Product Variants" labelPosition="center" />
+        
+        <VariantManager
+          attributeDefinitions={attributeDefinitions}
+          selectedAttributes={selectedAttributes}
+          onAttributesChange={(attrs) => {
+            setSelectedAttributes(attrs);
+            setVariantDataChanged(true);
+          }}
+          variants={variants}
+          onVariantsChange={(vars) => {
+            setVariants(vars);
+            setVariantDataChanged(true);
+          }}
+          basePrice={form.values.price}
+          hasVariants={hasVariants}
+          onHasVariantsChange={(enabled) => {
+            setHasVariants(enabled);
+            setVariantDataChanged(true);
+          }}
+          onAttributeDefinitionsChange={(attrDefs) => {
+            setAttributeDefinitions(attrDefs);
+          }}
+          isLoading={isLoading}
+          formValues={{
+            price: form.values.price,
+            sku: form.values.sku,
+            stockQuantity: form.values.stockQuantity
+          }}
+          onFormValueChange={(field, value) => form.setFieldValue(field, value)}
+        />
 
         <Title order={4} mt="lg" mb="sm">Product Images</Title>
         <FileInput label="Add New Images" placeholder="Select images" multiple accept="image/*" onChange={handleFileSelectAndUpload} disabled={isUploading || isLoading || isFetchingProduct} mb="md" value={selectedFiles} clearable />
@@ -336,7 +438,20 @@ export default function EditProductPage() {
 
         <Group justify="flex-end" mt="xl">
           <Button variant="default" onClick={() => router.push('/admin/products')} leftSection={<IconX size={16}/>} disabled={isLoading || isUploading || isFetchingProduct}>Cancel</Button>
-          <Button type="submit" leftSection={<IconDeviceFloppy size={16}/>} disabled={isLoading || isMetaLoading || isUploading || isFetchingProduct || !form.isDirty()}>Save Changes</Button>
+          <Button 
+            type="submit" 
+            leftSection={<IconDeviceFloppy size={16}/>} 
+            disabled={
+              isLoading || 
+              isMetaLoading || 
+              isUploading || 
+              isFetchingProduct || 
+              (!form.values.name || !form.values.description || (hasVariants ? false : (!form.values.sku || form.values.price <= 0))) ||
+              (!form.isDirty() && !variantDataChanged)
+            }
+          >
+            Save Changes
+          </Button>
         </Group>
       </Paper>
       <Space h="xl" />

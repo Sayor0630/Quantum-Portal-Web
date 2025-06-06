@@ -6,9 +6,11 @@ import { useForm, yupResolver } from '@mantine/form';
 import * as Yup from 'yup';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { IconDeviceFloppy, IconAlertCircle, IconX, IconUpload, IconPhoto, IconSeo } from '@tabler/icons-react';
+import Link from 'next/link';
+import { IconDeviceFloppy, IconAlertCircle, IconX, IconUpload, IconPhoto, IconSeo, IconArrowLeft } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { useSession } from 'next-auth/react';
+import VariantManager from '../_components/VariantManager';
 
 interface AttributeDefinition {
   _id: string;
@@ -26,6 +28,23 @@ interface UploadedImageInfo {
   public_id: string;
 }
 
+// New interfaces for variant system
+interface SelectedAttribute {
+  attributeId: string;
+  name: string;
+  selectedValues: string[];
+}
+
+interface ProductVariant {
+  _id?: string;
+  attributeCombination: { [key: string]: string };
+  sku?: string;
+  price?: number;
+  stockQuantity: number;
+  isActive: boolean;
+  images?: Array<{ url: string; public_id: string }>;
+}
+
 const generateSlugFromName = (name: string): string => {
     if (!name) return '';
     return name
@@ -37,21 +56,27 @@ const generateSlugFromName = (name: string): string => {
         .replace(/-+$/, '');
 };
 
-// Yup validation schema
-const schema = Yup.object().shape({
+// Yup validation schema - conditional based on variant system
+const createValidationSchema = (hasVariants: boolean) => Yup.object().shape({
   name: Yup.string().required('Product name is required'),
   slug: Yup.string().matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug must be lowercase alphanumeric with hyphens.').required('Slug is required'),
   description: Yup.string().required('Description is required'),
-  price: Yup.number().min(0, 'Price must be non-negative').required('Price is required').typeError('Price must be a number'),
-  sku: Yup.string().required('SKU is required'),
-  stockQuantity: Yup.number().integer('Stock must be an integer').min(0, 'Stock must be non-negative').required('Stock quantity is required').typeError('Stock must be a number'),
+  price: hasVariants ? 
+    Yup.number().min(0, 'Base price must be non-negative').optional() : 
+    Yup.number().min(0, 'Price must be non-negative').required('Price is required').typeError('Price must be a number'),
+  sku: hasVariants ? 
+    Yup.string().optional() : 
+    Yup.string().required('SKU is required'),
+  stockQuantity: hasVariants ? 
+    Yup.number().integer('Stock must be an integer').min(0, 'Stock must be non-negative').optional() : 
+    Yup.number().integer('Stock must be an integer').min(0, 'Stock must be non-negative').required('Stock quantity is required').typeError('Stock must be a number'),
   category: Yup.string().nullable(),
   tags: Yup.array().of(Yup.string()).ensure(),
-  customAttributes: Yup.object().optional(),
   images: Yup.array().of(Yup.string().url("Each image must be a valid URL")).optional(),
   seoTitle: Yup.string().optional().trim().max(70, 'SEO Title should be 70 characters or less'),
   seoDescription: Yup.string().optional().trim().max(160, 'SEO Description should be 160 characters or less'),
-  isPublished: Yup.boolean(), // Added
+  isPublished: Yup.boolean(),
+  hasVariants: Yup.boolean(),
 });
 
 export default function NewProductPage() {
@@ -69,6 +94,13 @@ export default function NewProductPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  // Variant system state
+  const [selectedAttributes, setSelectedAttributes] = useState<SelectedAttribute[]>([]);
+  const [variants, setVariants] = useState<ProductVariant[]>([]);
+  const [hasVariants, setHasVariants] = useState(false);
+  const [variantDataChanged, setVariantDataChanged] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+
   const form = useForm({
     initialValues: {
       name: '',
@@ -79,16 +111,27 @@ export default function NewProductPage() {
       stockQuantity: 0,
       category: '',
       tags: [] as string[],
-      customAttributes: {} as Record<string, string | null>,
+
       images: [] as string[],
       seoTitle: '',
       seoDescription: '',
       isPublished: false, // Added
+      hasVariants: false,
     },
-    validate: yupResolver(schema),
+    validate: yupResolver(createValidationSchema(hasVariants)),
+    validateInputOnChange: hasSubmitted,
+    validateInputOnBlur: hasSubmitted,
   });
 
   const [isSlugManuallySet, setIsSlugManuallySet] = useState(false);
+
+  // Update form validation when hasVariants changes, but only if user has already submitted
+  useEffect(() => {
+    if (hasSubmitted) {
+      form.validate();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasVariants, hasSubmitted]);
 
   const productNameForSlug = form.values.name; // Watch product name for slug generation
   useEffect(() => {
@@ -163,25 +206,48 @@ export default function NewProductPage() {
   };
 
   const handleSubmit = async (values: typeof form.values) => {
+    setHasSubmitted(true);
     setIsLoading(true);
     setApiError(null);
     try {
+      // For variant products, use 0 for price and calculate stock
+      let productPrice = values.price;
+      let productStock = values.stockQuantity;
+      
+      if (hasVariants) {
+        // For variant products, always use 0 for price
+        productPrice = 0;
+        
+        // Calculate total stock across all variants
+        if (variants.length > 0) {
+          productStock = variants.reduce((total, variant) => {
+            return total + (variant.stockQuantity || 0);
+          }, 0);
+        } else {
+          productStock = 0;
+        }
+      }
+
       const payload = {
         name: values.name,
         slug: values.slug, // Added slug
         isPublished: values.isPublished, // Added isPublished
         description: values.description,
-        price: values.price,
-        sku: values.sku,
-        stockQuantity: values.stockQuantity,
+        price: productPrice,
+        ...(hasVariants ? {} : { sku: values.sku }), // Only include SKU for non-variant products
+        stockQuantity: productStock,
         category: values.category || null,
         tags: values.tags,
-        customAttributes: Object.fromEntries(
-            Object.entries(values.customAttributes).filter(([_, value]) => value !== null && value !== '')
-        ),
         images: uploadedImages.map(img => img.url),
         seoTitle: values.seoTitle || undefined,
         seoDescription: values.seoDescription || undefined,
+        // New variant fields
+        hasVariants,
+        attributeDefinitions: hasVariants ? 
+          Object.fromEntries(
+            selectedAttributes.map(attr => [attr.name, attr.selectedValues])
+          ) : {},
+        variants: hasVariants ? variants : [],
       };
 
       const response = await fetch('/api/admin/products', {
@@ -213,7 +279,17 @@ export default function NewProductPage() {
 
   return (
     <AdminLayout>
-      <Title order={2} mb="xl">Add New Product</Title>
+      <Group justify="space-between" mb="xl">
+        <Title order={2}>Add New Product</Title>
+        <Button 
+          variant="outline" 
+          component={Link} 
+          href="/admin/products" 
+          leftSection={<IconArrowLeft size={16}/>}
+        >
+          Back to Products
+        </Button>
+      </Group>
       <Paper component="form" onSubmit={form.onSubmit(handleSubmit)} withBorder shadow="md" p="xl" radius="md" pos="relative">
         <LoadingOverlay visible={isLoading || isUploading} overlayProps={{ radius: 'sm', blur: 2 }} />
         {apiError && <Alert icon={<IconAlertCircle size="1rem" />} title="Form Submission Error!" color="red" withCloseButton onClose={() => setApiError(null)} mb="md">{apiError}</Alert>}
@@ -232,18 +308,6 @@ export default function NewProductPage() {
             mb="md"
         />
         <Textarea label="Description" placeholder="Detailed description..." required autosize minRows={3} {...form.getInputProps('description')} mb="md" />
-        <Grid>
-            <Grid.Col span={{base:12, md:4}}>
-                <NumberInput label="Price" placeholder="0.00" required decimalScale={2} step={0.01} min={0} leftSection="$" {...form.getInputProps('price')} />
-            </Grid.Col>
-            <Grid.Col span={{base:12, md:4}}>
-                <TextInput label="SKU" placeholder="e.g., TSHIRT-BLK-LG" required {...form.getInputProps('sku')} />
-            </Grid.Col>
-            <Grid.Col span={{base:12, md:4}}>
-                <NumberInput label="Stock Quantity" placeholder="0" required min={0} step={1} allowDecimal={false} {...form.getInputProps('stockQuantity')} />
-            </Grid.Col>
-        </Grid>
-        <Space h="md"/>
 
         <Switch label="Publish Product (Visible on storefront)" {...form.getInputProps('isPublished', { type: 'checkbox' })} mb="md" />
         <Divider my="lg" label="Categorization & Details" labelPosition="center" />
@@ -251,21 +315,44 @@ export default function NewProductPage() {
         <Select label="Category" placeholder="Select a category" data={categoriesList.map(cat => ({ value: cat._id, label: cat.name }))} searchable clearable disabled={isMetaLoading} {...form.getInputProps('category')} mb="md" />
         <TagsInput label="Tags" placeholder="Enter tags (e.g., new, sale)" description="Press Enter or comma to add a tag" clearable {...form.getInputProps('tags')} mb="md" />
 
-        <Title order={4} mt="lg" mb="sm">Custom Attributes</Title>
-        {isMetaLoading && <Text c="dimmed" size="sm">Loading attribute options...</Text>}
-        {!isMetaLoading && attributeDefinitions.length === 0 && <Text c="dimmed" size="sm">No custom attributes defined. Define them in &apos;Custom Attributes&apos; section.</Text>}
-        <Grid mb="md">
-            {attributeDefinitions.map((attrDef) => (
-                <Grid.Col span={{ base: 12, md: 6 }} key={attrDef._id}>
-                    <Select label={attrDef.name} placeholder={`Select ${attrDef.name}`} data={attrDef.values.map(val => ({ value: val, label: val }))} clearable value={form.values.customAttributes[attrDef.name] || null}
-                        onChange={(value) => {
-                            const newAttrs = { ...form.values.customAttributes };
-                            if (value) newAttrs[attrDef.name] = value; else delete newAttrs[attrDef.name];
-                            form.setFieldValue('customAttributes', newAttrs);
-                        }} mb="sm" />
-                </Grid.Col>
-            ))}
-        </Grid>
+        <VariantManager
+          attributeDefinitions={attributeDefinitions}
+          selectedAttributes={selectedAttributes}
+          onAttributesChange={(attrs) => {
+            setSelectedAttributes(attrs);
+            setVariantDataChanged(true);
+          }}
+          variants={variants}
+          onVariantsChange={(vars) => {
+            setVariants(vars);
+            setVariantDataChanged(true);
+          }}
+          basePrice={form.values.price}
+          hasVariants={hasVariants}
+          onHasVariantsChange={(enabled) => {
+            setHasVariants(enabled);
+            form.setFieldValue('hasVariants', enabled);
+            setVariantDataChanged(true);
+            
+            // Reset variant data if disabled
+            if (!enabled) {
+              setSelectedAttributes([]);
+              setVariants([]);
+            }
+          }}
+          onAttributeDefinitionsChange={(attrDefs) => {
+            setAttributeDefinitions(attrDefs);
+          }}
+          isLoading={isLoading}
+          formValues={{
+            price: form.values.price,
+            sku: form.values.sku,
+            stockQuantity: form.values.stockQuantity
+          }}
+          onFormValueChange={(field, value) => {
+            form.setFieldValue(field, value);
+          }}
+        />
 
         <Title order={4} mt="lg" mb="sm">Product Images</Title>
         <FileInput label="Upload Images" placeholder="Click to select images" multiple accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleFileSelectAndUpload} disabled={isUploading || isLoading} mb="md" value={selectedFiles} clearable />
@@ -293,7 +380,18 @@ export default function NewProductPage() {
 
         <Group justify="flex-end" mt="xl">
           <Button variant="default" onClick={() => router.push('/admin/products')} leftSection={<IconX size={16}/>} disabled={isLoading || isUploading}>Cancel</Button>
-          <Button type="submit" leftSection={<IconDeviceFloppy size={16}/>} disabled={isLoading || isMetaLoading || isUploading}>Save Product</Button>
+          <Button 
+            type="submit" 
+            leftSection={<IconDeviceFloppy size={16}/>} 
+            disabled={
+              isLoading || 
+              isMetaLoading || 
+              isUploading || 
+              (!form.values.name || !form.values.description || (!hasVariants && (!form.values.sku || form.values.price <= 0)))
+            }
+          >
+            Save Product
+          </Button>
         </Group>
       </Paper>
       <Space h="xl" />

@@ -3,17 +3,27 @@ import mongoose, { Document, Schema, Types } from 'mongoose';
 export interface IOrderItem extends Document {
   product: Types.ObjectId; // Reference to Product model
   name: string; // Denormalized product name
+  sku?: string; // Denormalized SKU at the time of order (can be variant-specific)
   price: number; // Price at the time of order
   quantity: number;
   image?: string; // Denormalized product image
+  selectedAttributes?: Map<string, string>; // Custom attributes selected for this order item (e.g., Color: Red, Size: Large)
+  // Variant product fields
+  isVariantProduct?: boolean; // Whether this order item is a variant product
+  variantId?: string; // ID of the specific variant if applicable
 }
 
 const OrderItemSchema: Schema<IOrderItem> = new Schema({
   product: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
   name: { type: String, required: true },
+  sku: { type: String, trim: true }, // Optional SKU field
   price: { type: Number, required: true },
   quantity: { type: Number, required: true, min: 1 },
   image: { type: String }, // Optional
+  selectedAttributes: { type: Map, of: String }, // Custom attributes for this specific order item
+  // Variant product fields
+  isVariantProduct: { type: Boolean, default: false }, // Whether this order item is a variant product
+  variantId: { type: String, trim: true }, // ID of the specific variant if applicable
 });
 
 

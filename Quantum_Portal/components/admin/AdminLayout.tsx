@@ -71,6 +71,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { label: 'Product Page Layout', href: '/admin/settings/product-page-layout', icon: IconSettings }, // Or layout specific icon
       ]
     },
+    {
+      label: 'Site Settings', // New section for site configuration
+      icon: IconSettings,
+      children: [
+        { label: 'Payment Methods', href: '/admin/payment-methods', icon: IconReceipt },
+      ]
+    },
     // Settings might be better as a top-level item if it has many distinct sub-sections
     // For now, Site Identity, Navigation, Product Page Layout are under Appearance.
     // User Management will be its own top-level item for superadmins.

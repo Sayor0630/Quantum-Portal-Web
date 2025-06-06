@@ -72,7 +72,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const products = await Product.find(query)
       .populate('category', 'name slug isPublished') // Also select isPublished for category
-      .select('name description price sku images category tags customAttributes slug seoTitle seoDescription isPublished')
+      .select('name description price sku images category tags customAttributes slug seoTitle seoDescription isPublished hasVariants attributeDefinitions variants stockQuantity')
       .sort(sortParams)
       .limit(limitNum)
       .skip((pageNum - 1) * limitNum)

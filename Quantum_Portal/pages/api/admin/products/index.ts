@@ -70,11 +70,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             name, description, price, sku, stockQuantity, category,
             tags, customAttributes, images,
             seoTitle, seoDescription,
-            slug, isPublished // Added slug and isPublished
+            slug, isPublished, // Added slug and isPublished
+            hasVariants, attributeDefinitions, variants // New variant fields
         } = req.body;
 
-        if (!name || !description || price === undefined || !sku) {
-          return res.status(400).json({ message: 'Missing required fields: name, description, price, SKU' });
+        if (!name || !description) {
+          return res.status(400).json({ message: 'Missing required fields: name, description' });
+        }
+
+        // Validate required fields based on whether product has variants
+        if (!hasVariants) {
+          if (price === undefined || !sku) {
+            return res.status(400).json({ message: 'Missing required fields for non-variant product: price, SKU' });
+          }
+        } else {
+          if (!variants || variants.length === 0) {
+            return res.status(400).json({ message: 'Variant products must have at least one variant' });
+          }
         }
 
         if (category) {
@@ -87,19 +99,44 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           }
         }
 
+        // Handle price and stock for variant products
+        let finalPrice = hasVariants ? 0 : (price || 0);
+        let finalStock = stockQuantity || 0;
+        let finalSku = sku;
+        
+        if (hasVariants && variants && variants.length > 0) {
+          // Calculate total stock across all variants
+          finalStock = variants.reduce((total: number, variant: any) => {
+            return total + (variant.stockQuantity || 0);
+          }, 0);
+          
+          // Auto-generate SKU for variant products based on product name
+          if (!finalSku) {
+            finalSku = name
+              .toLowerCase()
+              .replace(/\s+/g, '-')
+              .replace(/[^\w-]+/g, '')
+              .replace(/--+/g, '-')
+              .replace(/^-+/, '')
+              .replace(/-+$/, '');
+          }
+        }
+
         const newProductData: any = {
           name,
           description,
-          price,
-          sku,
-          stockQuantity: stockQuantity || 0,
+          price: finalPrice,
+          sku: finalSku || '',
+          stockQuantity: finalStock,
           category: category ? new mongoose.Types.ObjectId(category) : undefined,
           tags: tags || [],
-          customAttributes: customAttributes || {},
           images: images || [],
           seoTitle: seoTitle || undefined,
           seoDescription: seoDescription || undefined,
-          isPublished: isPublished !== undefined ? isPublished : false, // Default to false if not provided
+          isPublished: isPublished !== undefined ? isPublished : false,
+          hasVariants: hasVariants || false,
+          attributeDefinitions: hasVariants ? (attributeDefinitions || {}) : {},
+          variants: hasVariants ? (variants || []) : [],
         };
 
         if (slug) { // If slug is provided, include it; pre-save hook will format/validate

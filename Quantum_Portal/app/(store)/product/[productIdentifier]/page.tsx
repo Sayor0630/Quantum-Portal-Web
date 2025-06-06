@@ -9,6 +9,18 @@ import { Metadata } from 'next';
 // Import new breadcrumb components and utilities
 import BreadcrumbsDisplay from '../../_components/BreadcrumbsDisplay';
 import { generateProductBreadcrumbs, BreadcrumbProductData, BreadcrumbNestedCategory } from '../../../../lib/breadcrumbsUtils'; // Adjust path
+import VariantSelector from '../_components/VariantSelector';
+import AddToCartClient from '../_components/AddToCartClient';
+
+// Product Variant Interface
+interface ProductVariant {
+    _id?: string;
+    attributeCombination: { [key: string]: string };
+    sku?: string;
+    price?: number;
+    stockQuantity: number;
+    isActive: boolean;
+}
 
 // Updated Interfaces to use/align with Breadcrumb types
 interface ProductImage { url: string; public_id?: string; }
@@ -27,6 +39,9 @@ interface Product extends BreadcrumbProductData { // Extends BreadcrumbProductDa
     isPublished?: boolean;
     stockQuantity?: number;
     slug?: string; // For generateMetadata URL
+    hasVariants?: boolean;
+    attributeDefinitions?: { [key: string]: string[] };
+    variants?: ProductVariant[];
 }
 interface PageSectionLayout { sectionId: string; name: string; }
 interface ProductPageData { product: Product | null; layout: { sections: PageSectionLayout[] } | null; }
@@ -106,23 +121,61 @@ const ProductImagesSection = ({ product }: { product: Product }) => (
         ) : <Box style={{height: 300, display:'flex', alignItems:'center', justifyContent:'center', background: 'var(--mantine-color-gray-1)', borderRadius:'var(--mantine-radius-md)'}}><Text c="dimmed">No images available.</Text></Box>}
     </Paper>
 );
-const ProductHeaderSection = ({ product }: { product: Product }) => (
-  <Box mb="lg">
-    <Title order={1} lineClamp={2}>{product.name}</Title>
-    {product.sku && <Text size="xs" c="dimmed" mt={4}>SKU: {product.sku}</Text>}
-    <Group justify="space-between" align="center" mt="md">
-        <Text size="xl" fw={700} c="blue.7">${product.price.toFixed(2)}</Text>
-        <Group gap="xs" align="center">
-            <Rating value={0} fractions={2} readOnly />
-            <Text size="sm" c="dimmed">(No reviews yet)</Text>
-        </Group>
-    </Group>
-  </Box>
-);
+const ProductHeaderSection = ({ product }: { product: Product }) => {
+  const getDisplayPrice = () => {
+    if (product.hasVariants && product.variants && product.variants.length > 0) {
+      const activePrices = product.variants
+        .filter(v => v.isActive && v.stockQuantity > 0)
+        .map(v => v.price || product.price);
+      
+      if (activePrices.length === 0) return `$${product.price.toFixed(2)}`;
+      
+      const minPrice = Math.min(...activePrices);
+      const maxPrice = Math.max(...activePrices);
+      
+      if (minPrice === maxPrice) {
+        return `$${minPrice.toFixed(2)}`;
+      } else {
+        return `$${minPrice.toFixed(2)} - $${maxPrice.toFixed(2)}`;
+      }
+    }
+    return `$${product.price.toFixed(2)}`;
+  };
+
+  const getStockStatus = () => {
+    if (product.hasVariants && product.variants) {
+      const totalStock = product.variants
+        .filter(v => v.isActive)
+        .reduce((sum, v) => sum + v.stockQuantity, 0);
+      return totalStock;
+    }
+    return product.stockQuantity || 0;
+  };
+
+  return (
+    <Box mb="lg">
+      <Title order={1} lineClamp={2}>{product.name}</Title>
+      {!product.hasVariants && product.sku && <Text size="xs" c="dimmed" mt={4}>SKU: {product.sku}</Text>}
+      <Group justify="space-between" align="center" mt="md">
+          <Text size="xl" fw={700} c="blue.7">{getDisplayPrice()}</Text>
+          <Group gap="xs" align="center">
+              <Rating value={0} fractions={2} readOnly />
+              <Text size="sm" c="dimmed">(No reviews yet)</Text>
+          </Group>
+      </Group>
+      {getStockStatus() === 0 && (
+        <Badge color="red" variant="light" mt="xs">Out of Stock</Badge>
+      )}
+    </Box>
+  );
+};
 const ProductDescriptionSection = ({ product }: { product: Product }) => (
   product.description ? <Paper p="md" mt="lg" withBorder radius="sm"><Title order={4} mb="sm">Description</Title><Text style={{whiteSpace: 'pre-line'}}>{product.description}</Text></Paper> : null
 );
 const CustomAttributesSection = ({ product }: { product: Product }) => {
+    // Don't show custom attributes for variant products
+    if (product.hasVariants) return null;
+    
     if (!product.customAttributes || Object.keys(product.customAttributes).length === 0) return null;
     return (
         <Paper p="md" mt="lg" withBorder radius="sm">
@@ -138,13 +191,7 @@ const CustomAttributesSection = ({ product }: { product: Product }) => {
     );
 };
 const AddToCartSection = ({ product }: { product: Product }) => (
-    <Paper p="md" mt="lg" withBorder radius="sm" shadow="sm">
-        <Text size="sm" mb="xs">Quantity:</Text>
-        <NumberInput defaultValue={1} min={1} max={product.stockQuantity && product.stockQuantity > 0 ? product.stockQuantity : 1} mb="md" />
-        <Button leftSection={<IconShoppingCartPlus size={18}/>} size="lg" fullWidth disabled={(product.stockQuantity || 0) === 0}>
-            {(product.stockQuantity || 0) > 0 ? 'Add to Cart' : 'Out of Stock'} (UI Only)
-        </Button>
-    </Paper>
+  <AddToCartClient product={product} />
 );
 const ReviewsSection = ({ product }: { product: Product }) => ( <Paper p="md" mt="lg" withBorder radius="sm"><Title order={4} mb="sm">Customer Reviews</Title><Text c="dimmed">Reviews section coming soon.</Text></Paper>);
 const RelatedProductsSection = ({ product }: { product: Product }) => ( <Paper p="md" mt="xl" withBorder radius="sm"><Title order={4} mb="sm">Related Products</Title><Text c="dimmed">Related products coming soon.</Text></Paper>);

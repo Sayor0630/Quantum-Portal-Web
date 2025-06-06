@@ -2,7 +2,7 @@
 
 import AdminLayout from '../../../../components/admin/AdminLayout';
 import { Title, Text, Paper, Group, Button, LoadingOverlay, Alert, Select, Divider, Table, Image, Grid, Card, Badge, Space, ThemeIcon, ScrollArea } from '@mantine/core';
-import { IconAlertCircle, IconDeviceFloppy, IconTruckDelivery, IconFileInvoice, IconUserCircle, IconMapPin, IconReceipt, IconEdit, IconArrowLeft } from '@tabler/icons-react'; // Added IconArrowLeft
+import { IconAlertCircle, IconDeviceFloppy, IconTruckDelivery, IconFileInvoice, IconUserCircle, IconMapPin, IconReceipt, IconEdit, IconArrowLeft } from '@tabler/icons-react';
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useParams } from 'next/navigation';
@@ -26,8 +26,15 @@ interface ProductInOrder {
 interface OrderItem {
     _id: string; // Mongoose subdocuments get an _id by default
     product: ProductInOrder | null;
+    name?: string; // Denormalized product name (variant-specific)
+    sku?: string; // Denormalized SKU (variant-specific)
+    image?: string; // Denormalized image URL (variant-specific)
     quantity: number;
     price: number;
+    selectedAttributes?: Map<string, string> | Record<string, string>; // Can be Map or plain object
+    // Variant-specific fields for consistency with create and edit order pages
+    isVariantProduct?: boolean;
+    variantId?: string;
 }
 interface Address { // Define a basic address structure
     fullName: string; // Required field
@@ -269,25 +276,73 @@ export default function OrderDetailsPage() {
                  <Title order={4} mb="sm">Order Items</Title>
                  {/* TODO: Add a check for order.orderItems being an array and having length */}
                  <ScrollArea>
-                    <Table striped highlightOnHover verticalSpacing="sm" miw={600}>
+                    <Table striped highlightOnHover verticalSpacing="sm" miw={700}>
                         <Table.Thead>
-                            <Table.Tr><Table.Th>Product</Table.Th><Table.Th>SKU</Table.Th><Table.Th style={{textAlign: 'center'}}>Qty</Table.Th><Table.Th style={{textAlign: 'right'}}>Unit Price</Table.Th><Table.Th style={{textAlign: 'right'}}>Total</Table.Th></Table.Tr>
+                            <Table.Tr><Table.Th>Product</Table.Th><Table.Th>SKU</Table.Th><Table.Th>Attributes</Table.Th><Table.Th style={{textAlign: 'center'}}>Qty</Table.Th><Table.Th style={{textAlign: 'right'}}>Unit Price</Table.Th><Table.Th style={{textAlign: 'right'}}>Total</Table.Th></Table.Tr>
                         </Table.Thead>
                         <Table.Tbody>
                             {order.orderItems && order.orderItems.map(item => {
                                 const product = item.product; // Already populated or null
-                                const imageUrl = product?.images?.[0]
-                                    ? (typeof product.images[0] === 'string' ? product.images[0] : (product.images[0] as ProductImage).url)
-                                    : '/placeholder-image.png';
+                                
+                                // Use order item's stored image if available, otherwise fallback to product images
+                                const imageUrl = (item as any).image || 
+                                    (product?.images?.[0]
+                                        ? (typeof product.images[0] === 'string' ? product.images[0] : (product.images[0] as ProductImage).url)
+                                        : '/placeholder-image.png');
+                                
+                                // Use order item's stored name if available, otherwise fallback to product name
+                                const itemName = (item as any).name || product?.name || 'Product Not Found';
+                                
+                                // Use order item's stored SKU if available, otherwise fallback to product SKU
+                                const itemSku = (item as any).sku || product?.sku || 'N/A';
+                                
+                                // Handle selectedAttributes - could be Map or plain object
+                                const renderAttributes = () => {
+                                    if (!item.selectedAttributes) return <Text size="sm" c="dimmed">No attributes</Text>;
+                                    
+                                    let attributesObj: Record<string, string> = {};
+                                    
+                                    // Convert Map to object if needed
+                                    if (item.selectedAttributes instanceof Map) {
+                                        attributesObj = Object.fromEntries(item.selectedAttributes);
+                                    } else {
+                                        attributesObj = item.selectedAttributes as Record<string, string>;
+                                    }
+                                    
+                                    const attributeEntries = Object.entries(attributesObj);
+                                    
+                                    if (attributeEntries.length === 0) {
+                                        return <Text size="sm" c="dimmed">No attributes</Text>;
+                                    }
+                                    
+                                    return (
+                                        <div>
+                                            {attributeEntries.map(([key, value]) => (
+                                                <Badge key={key} size="sm" variant="outline" mr={4} mb={2}>
+                                                    {key}: {value}
+                                                </Badge>
+                                            ))}
+                                        </div>
+                                    );
+                                };
+                                
                                 return (
                                 <Table.Tr key={item._id || (product?._id || Math.random().toString())}>
                                     <Table.Td>
                                         <Group gap="sm" wrap="nowrap">
-                                            <Image src={imageUrl} alt={product?.name || 'Product Image'} w={40} h={40} fit="contain" radius="sm" />
-                                            <Text size="sm" fw={500}>{product?.name || 'Product Not Found'}</Text>
+                                            <Image src={imageUrl} alt={itemName} w={40} h={40} fit="contain" radius="sm" />
+                                            <div>
+                                                <Text size="sm" fw={500}>{itemName}</Text>
+                                                {item.isVariantProduct && item.variantId && (
+                                                    <Badge size="xs" variant="light" color="blue" mt={2}>
+                                                        Variant Product
+                                                    </Badge>
+                                                )}
+                                            </div>
                                         </Group>
                                     </Table.Td>
-                                    <Table.Td>{product?.sku || 'N/A'}</Table.Td>
+                                    <Table.Td>{itemSku}</Table.Td>
+                                    <Table.Td>{renderAttributes()}</Table.Td>
                                     <Table.Td style={{textAlign: 'center'}}>{item.quantity}</Table.Td>
                                     <Table.Td style={{textAlign: 'right'}}>${item.price.toFixed(2)}</Table.Td>
                                     <Table.Td style={{textAlign: 'right'}}>${(item.quantity * item.price).toFixed(2)}</Table.Td>
@@ -372,7 +427,7 @@ export default function OrderDetailsPage() {
                  >
                      Update Order Status
                  </Button>
-                 <Button component={Link} href={`/admin/orders/${orderId}/edit`} fullWidth variant="outline" mt="sm" disabled>Edit Full Order (Future)</Button>
+                 <Button component={Link} href={`/admin/orders/${orderId}/edit`} fullWidth variant="outline" mt="sm">Edit Full Order</Button>
              </Card>
 
              {order.customer && (

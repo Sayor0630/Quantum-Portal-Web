@@ -268,7 +268,12 @@ export default function OrdersPage() {
                     <Menu.Item leftSection={<IconEye size={14} />} component={Link} href={`/admin/orders/${order._id}`}>
                         View Details
                     </Menu.Item>
-                    <Menu.Item leftSection={<IconEdit size={14} />} component={Link} href={`/admin/orders/${order._id}/edit`} disabled>
+                    <Menu.Item 
+                        leftSection={<IconEdit size={14} />} 
+                        component={Link} 
+                        href={`/admin/orders/${order._id}/edit`}
+                        disabled={!userRole || !hasPermission(userRole, Permission.CREATE_ORDER)}
+                    >
                         Edit Order
                     </Menu.Item>
                     <Menu.Divider />

@@ -26,6 +26,15 @@ interface Product {
   category?: ProductCategory;
   images?: string[];
   isPublished?: boolean;
+  hasVariants?: boolean;
+  variants?: Array<{
+    _id?: string;
+    attributeCombination: { [key: string]: string };
+    sku?: string;
+    price?: number;
+    stockQuantity: number;
+    isActive: boolean;
+  }>;
 }
 
 interface Category {
@@ -212,7 +221,26 @@ export default function ProductsPage() {
       </Table.Td>
       <Table.Td>{product.name}</Table.Td>
       <Table.Td>{product.sku || 'N/A'}</Table.Td>
-      <Table.Td>${typeof product.price === 'number' ? product.price.toFixed(2) : 'N/A'}</Table.Td>
+      <Table.Td>
+        {product.hasVariants && product.variants && product.variants.length > 0 ? (() => {
+          const variantPrices = product.variants
+            .filter(v => v.price && v.price > 0 && v.isActive)
+            .map(v => v.price!);
+          
+          if (variantPrices.length === 0) {
+            return `$${typeof product.price === 'number' ? product.price.toFixed(2) : '0.00'} (base)`;
+          }
+          
+          const minPrice = Math.min(...variantPrices);
+          const maxPrice = Math.max(...variantPrices);
+          
+          if (minPrice === maxPrice) {
+            return `$${minPrice.toFixed(2)}`;
+          }
+          
+          return `$${minPrice.toFixed(2)} - $${maxPrice.toFixed(2)}`;
+        })() : `$${typeof product.price === 'number' ? product.price.toFixed(2) : 'N/A'}`}
+      </Table.Td>
       <Table.Td>{product.stockQuantity !== undefined ? product.stockQuantity : 'N/A'}</Table.Td>
       <Table.Td>{product.category?.name || 'Uncategorized'}</Table.Td>
       {/* <Table.Td>{product.isPublished ? <Badge color="green">Published</Badge> : <Badge color="gray">Draft</Badge>}</Table.Td> */}

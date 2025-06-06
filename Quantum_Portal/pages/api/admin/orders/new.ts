@@ -137,12 +137,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!item.productId || !item.name || typeof item.price !== 'number' || typeof item.quantity !== 'number') {
         throw new Error('Invalid order item structure. Each item must have productId, name, price, and quantity.');
       }
+      
+      // Process selectedAttributes if present
+      const selectedAttributes = new Map();
+      if (item.selectedAttributes && typeof item.selectedAttributes === 'object') {
+        for (const [key, value] of Object.entries(item.selectedAttributes)) {
+          selectedAttributes.set(key, value);
+        }
+      }
+      
       return {
         product: new mongoose.Types.ObjectId(item.productId), // Ensure productId is a valid ObjectId string
         name: item.name,
+        sku: item.sku || undefined, // Include SKU if provided
         price: item.price,
         quantity: item.quantity,
         image: item.image || undefined,
+        selectedAttributes: selectedAttributes.size > 0 ? selectedAttributes : undefined,
+        // Variant product fields
+        isVariantProduct: item.isVariantProduct || false,
+        variantId: item.variantId || undefined,
       };
     });
 
