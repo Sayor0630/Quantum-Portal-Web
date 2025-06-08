@@ -266,20 +266,18 @@ export default function EditCustomerPage() {
     }
 
 
-    console.log('Submitting update payload (simulated):', payload);
-    // Simulate API Call
+    console.log('Submitting update payload:', payload);
     try {
-        // const response = await fetch(`/api/admin/customers/${customerId}`, {
-        //     method: 'PUT',
-        //     headers: { 'Content-Type': 'application/json' },
-        //     body: JSON.stringify(payload),
-        // });
-        // const result = await response.json();
-        // if (!response.ok || !result.success) {
-        //     throw new Error(result.message || 'Failed to update customer.');
-        // }
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate delay
-        notifications.show({ title: 'Customer Updated (Simulated)', message: `Customer ${payload.firstName} ${payload.lastName} updated.`, color: 'green', icon: <IconDeviceFloppy/> });
+        const response = await fetch(`/api/admin/customers/${customerId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || 'Failed to update customer.');
+        }
+        notifications.show({ title: 'Customer Updated', message: `Customer ${payload.firstName} ${payload.lastName} updated successfully.`, color: 'green', icon: <IconDeviceFloppy/> });
         router.push('/admin/customers'); // Or to customer details: `/admin/customers/${customerId}`
     } catch (error: any) {
         setSubmitError(error.message);

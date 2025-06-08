@@ -32,6 +32,7 @@ export interface IProduct extends Document {
   stockQuantity: number; // Total/default stock (for simple products without variants)
   images?: string[];
   category?: mongoose.Schema.Types.ObjectId;
+  brand: mongoose.Schema.Types.ObjectId; // Required brand reference
   tags?: string[];
   
   // New variant-based attributes system
@@ -77,6 +78,7 @@ const ProductSchema: Schema<IProduct> = new Schema({
   stockQuantity: { type: Number, default: 0, min: 0, validate: { validator: Number.isInteger, message: 'Stock quantity must be an integer.' } },
   images: [{ type: String, trim: true }],
   category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', index: true },
+  brand: { type: mongoose.Schema.Types.ObjectId, ref: 'Brand', required: true, index: true },
   tags: [{ type: String, trim: true }],
   
   // New variant system

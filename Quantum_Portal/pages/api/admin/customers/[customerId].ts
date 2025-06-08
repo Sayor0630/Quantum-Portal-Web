@@ -104,6 +104,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         customerToUpdate.firstName = firstName;
         customerToUpdate.lastName = lastName;
         customerToUpdate.isActive = isActive !== undefined ? isActive : true;
+        
+        // --- Phone Number Update ---
+        if (phoneNumber !== undefined) {
+          customerToUpdate.phoneNumber = phoneNumber;
+        }
 
         // --- Password Update (if provided) ---
         if (password) {

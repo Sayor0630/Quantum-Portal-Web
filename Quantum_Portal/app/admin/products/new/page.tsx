@@ -23,6 +23,11 @@ interface CategoryData {
   name: string;
 }
 
+interface BrandData {
+  _id: string;
+  name: string;
+}
+
 interface UploadedImageInfo {
   url: string;
   public_id: string;
@@ -71,6 +76,7 @@ const createValidationSchema = (hasVariants: boolean) => Yup.object().shape({
     Yup.number().integer('Stock must be an integer').min(0, 'Stock must be non-negative').optional() : 
     Yup.number().integer('Stock must be an integer').min(0, 'Stock must be non-negative').required('Stock quantity is required').typeError('Stock must be a number'),
   category: Yup.string().nullable(),
+  brand: Yup.string().required('Brand is required'),
   tags: Yup.array().of(Yup.string()).ensure(),
   images: Yup.array().of(Yup.string().url("Each image must be a valid URL")).optional(),
   seoTitle: Yup.string().optional().trim().max(70, 'SEO Title should be 70 characters or less'),
@@ -87,6 +93,7 @@ export default function NewProductPage() {
   const [apiError, setApiError] = useState<string | null>(null);
 
   const [categoriesList, setCategoriesList] = useState<CategoryData[]>([]);
+  const [brandsList, setBrandsList] = useState<BrandData[]>([]);
   const [attributeDefinitions, setAttributeDefinitions] = useState<AttributeDefinition[]>([]);
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -110,6 +117,7 @@ export default function NewProductPage() {
       sku: '',
       stockQuantity: 0,
       category: '',
+      brand: '',
       tags: [] as string[],
 
       images: [] as string[],
@@ -149,21 +157,25 @@ export default function NewProductPage() {
         const fetchMetaData = async () => {
           setIsMetaLoading(true);
           try {
-            const [catRes, attrRes] = await Promise.all([
+            const [catRes, brandRes, attrRes] = await Promise.all([
               fetch('/api/admin/categories'),
+              fetch('/api/admin/brands'),
               fetch('/api/admin/attribute-definitions'),
             ]);
             if (!catRes.ok) throw new Error('Failed to fetch categories');
+            if (!brandRes.ok) throw new Error('Failed to fetch brands');
             if (!attrRes.ok) throw new Error('Failed to fetch attribute definitions');
 
             const catData = await catRes.json();
+            const brandData = await brandRes.json();
             const attrData = await attrRes.json();
 
             setCategoriesList(catData.map((c: any) => ({ _id: c._id, name: c.name })));
+            setBrandsList(brandData.brands ? brandData.brands.map((b: any) => ({ _id: b._id, name: b.name })) : []);
             setAttributeDefinitions(attrData);
 
           } catch (err: any) {
-            notifications.show({ title: 'Error loading metadata', message: err.message || "Could not load categories or attributes.", color: 'red' });
+            notifications.show({ title: 'Error loading metadata', message: err.message || "Could not load categories, brands, or attributes.", color: 'red' });
           } finally {
             setIsMetaLoading(false);
           }
@@ -237,6 +249,7 @@ export default function NewProductPage() {
         ...(hasVariants ? {} : { sku: values.sku }), // Only include SKU for non-variant products
         stockQuantity: productStock,
         category: values.category || null,
+        brand: values.brand,
         tags: values.tags,
         images: uploadedImages.map(img => img.url),
         seoTitle: values.seoTitle || undefined,
@@ -313,6 +326,7 @@ export default function NewProductPage() {
         <Divider my="lg" label="Categorization & Details" labelPosition="center" />
 
         <Select label="Category" placeholder="Select a category" data={categoriesList.map(cat => ({ value: cat._id, label: cat.name }))} searchable clearable disabled={isMetaLoading} {...form.getInputProps('category')} mb="md" />
+        <Select label="Brand" placeholder="Select a brand" data={brandsList.map(brand => ({ value: brand._id, label: brand.name }))} searchable clearable disabled={isMetaLoading} {...form.getInputProps('brand')} mb="md" required />
         <TagsInput label="Tags" placeholder="Enter tags (e.g., new, sale)" description="Press Enter or comma to add a tag" clearable {...form.getInputProps('tags')} mb="md" />
 
         <VariantManager

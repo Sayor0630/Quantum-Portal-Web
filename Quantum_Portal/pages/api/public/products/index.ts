@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import connectToDatabase from '../../../../lib/dbConnect';
 import Product from '../../../../models/Product';
 import Category from '../../../../models/Category';
+import Brand from '../../../../models/Brand';
 import mongoose from 'mongoose';
 
 
@@ -15,6 +16,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const {
         ids,
         categoryId,
+        brandId,
+        brandSlug,
+        search,
         limit = '12',
         page = '1',
         slug,
@@ -38,6 +42,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (categoryId && typeof categoryId === 'string' && mongoose.Types.ObjectId.isValid(categoryId)) {
       query.category = new mongoose.Types.ObjectId(categoryId);
     }
+    if (brandId && typeof brandId === 'string' && mongoose.Types.ObjectId.isValid(brandId)) {
+      query.brand = new mongoose.Types.ObjectId(brandId);
+    }
+    if (brandSlug && typeof brandSlug === 'string') {
+      // Find brand by slug and get its ID
+      const brand = await Brand.findOne({ slug: brandSlug, isActive: true }).select('_id').lean();
+      if (brand) {
+        query.brand = brand._id;
+      } else {
+        // Brand not found or inactive, return empty results
+        return res.status(200).json({
+          products: [],
+          currentPage: parseInt(page as string),
+          totalPages: 0,
+          totalItems: 0,
+        });
+      }
+    }
+    if (search && typeof search === 'string') {
+      // Search across product name, description, SKU, and brand name
+      const searchRegex = { $regex: search, $options: 'i' };
+      
+      // Get brand IDs that match the search term
+      const matchingBrands = await Brand.find({ 
+        name: searchRegex, 
+        isActive: true 
+      }).select('_id').lean();
+      const brandIds = matchingBrands.map(brand => brand._id);
+      
+      query.$or = [
+        { name: searchRegex },
+        { description: searchRegex },
+        { sku: searchRegex },
+        { tags: searchRegex },
+        ...(brandIds.length > 0 ? [{ brand: { $in: brandIds } }] : [])
+      ];
+    }
     if (slug && typeof slug === 'string') {
         query.slug = slug; // Query by actual slug field now
     }
@@ -60,6 +101,55 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
     }
 
+    // Handle attribute filtering (similar to admin API)
+    const attributeFilters: { [key: string]: any } = {};
+    Object.keys(req.query).forEach(key => {
+      if (key.startsWith('attribute.')) {
+        const attributeName = key.replace('attribute.', '');
+        const values = (req.query[key] as string).split(',').map(v => v.trim()).filter(v => v);
+        if (values.length > 0) {
+          attributeFilters[attributeName] = values;
+        }
+      }
+    });
+
+    // Apply attribute filters to query
+    if (Object.keys(attributeFilters).length > 0) {
+      const attributeConditions: any[] = [];
+      
+      Object.entries(attributeFilters).forEach(([attributeName, values]) => {
+        // For products with variants, check if any variant has the required attribute values
+        const variantCondition = {
+          $and: [
+            { hasVariants: true },
+            { 
+              variants: { 
+                $elemMatch: { 
+                  isActive: true,
+                  [`attributeCombination.${attributeName}`]: { $in: values }
+                } 
+              } 
+            }
+          ]
+        };
+        
+        // For products without variants, check custom attributes
+        const customAttributeCondition = {
+          $and: [
+            { $or: [{ hasVariants: false }, { hasVariants: { $exists: false } }] },
+            { [`customAttributes.${attributeName}`]: { $in: values } }
+          ]
+        };
+        
+        attributeConditions.push({ $or: [variantCondition, customAttributeCondition] });
+      });
+      
+      if (attributeConditions.length > 0) {
+        query.$and = query.$and || [];
+        query.$and.push(...attributeConditions);
+      }
+    }
+
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
 
@@ -72,7 +162,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const products = await Product.find(query)
       .populate('category', 'name slug isPublished') // Also select isPublished for category
-      .select('name description price sku images category tags customAttributes slug seoTitle seoDescription isPublished hasVariants attributeDefinitions variants stockQuantity')
+      .populate('brand', 'name slug')
+      .select('name description price sku images category brand tags customAttributes slug seoTitle seoDescription isPublished hasVariants attributeDefinitions variants stockQuantity')
       .sort(sortParams)
       .limit(limitNum)
       .skip((pageNum - 1) * limitNum)

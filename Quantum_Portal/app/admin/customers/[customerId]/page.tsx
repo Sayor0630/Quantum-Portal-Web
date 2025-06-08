@@ -1,8 +1,8 @@
 'use client';
 
 import AdminLayout from '../../../../components/admin/AdminLayout';
-import { Title, Text, Paper, Group, Button, LoadingOverlay, Alert, Divider, Grid, Card, Badge, Space, ThemeIcon, Switch } from '@mantine/core';
-import { IconAlertCircle, IconDeviceFloppy, IconUserCircle, IconMapPin, IconCalendarEvent, IconMail, IconUserCheck, IconUserOff, IconArrowLeft, IconPencil } from '@tabler/icons-react'; // Added IconPencil
+import { Title, Text, Paper, Group, Button, LoadingOverlay, Alert, Divider, Grid, Card, Badge, Space, ThemeIcon, Switch, Table, ScrollArea, ActionIcon, Menu } from '@mantine/core';
+import { IconAlertCircle, IconDeviceFloppy, IconUserCircle, IconMapPin, IconCalendarEvent, IconMail, IconUserCheck, IconUserOff, IconArrowLeft, IconPencil, IconEye, IconEdit, IconDotsVertical, IconShoppingCart, IconReceipt } from '@tabler/icons-react'; // Added IconPencil
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useParams } from 'next/navigation';
@@ -23,6 +23,31 @@ interface Address {
      isDefaultBilling?: boolean;
      // Ensure this matches schema in Customer.ts
 }
+
+interface OrderItem {
+     product: { name: string; sku?: string; } | string;
+     quantity: number;
+     price: number;
+}
+
+interface OrderCustomer {
+     _id: string;
+     firstName?: string;
+     lastName?: string;
+     email: string;
+}
+
+interface Order {
+  _id: string;
+  orderNumber?: string; // MongoDB auto-generated order number
+  customer?: OrderCustomer | string;
+  orderItems: OrderItem[];
+  totalAmount: number;
+  status: string;
+  paymentStatus: 'unpaid' | 'paid';
+  createdAt: string;
+}
+
 interface Customer {
     _id: string;
     firstName?: string;
@@ -36,7 +61,30 @@ interface Customer {
     // orderCount?: number;
 }
 
-const getStatusColor = (isActive: boolean) => isActive ? 'green' : 'gray';
+const getStatusColor = (status: string) => {
+     switch (status?.toLowerCase()) {
+     case 'pending': return 'yellow';
+     case 'processing': return 'blue';
+     case 'shipped': return 'cyan';
+     case 'delivered': return 'green';
+     case 'cancelled': return 'red';
+     case 'refunded': return 'gray';
+     case 'on-hold': return 'orange';
+     case 'failed': return 'pink';
+     case 'completed': return 'teal';
+     default: return 'dimmed';
+     }
+ };
+
+const getPaymentStatusColor = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'paid': return 'green';
+      case 'unpaid': return 'red';
+      default: return 'gray';
+    }
+};
+
+const getAccountStatusColor = (isActive: boolean) => isActive ? 'green' : 'gray';
 
 export default function CustomerDetailsPage() {
   const { data: session, status: authStatus } = useSession();
@@ -50,6 +98,12 @@ export default function CustomerDetailsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [currentIsActive, setCurrentIsActive] = useState<boolean>(false);
+
+  // Orders state
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [isLoadingOrders, setIsLoadingOrders] = useState(false);
+  const [ordersError, setOrdersError] = useState<string | null>(null);
+  const [showAllOrders, setShowAllOrders] = useState(false);
 
   const userRole = (session?.user as any)?.role as Role | undefined;
   const canManageCustomers = userRole ? hasPermission(userRole, Permission.MANAGE_CUSTOMERS) : false;
@@ -89,6 +143,27 @@ export default function CustomerDetailsPage() {
     }
   }, [customerId, authStatus, canManageCustomers]); // Added canManageCustomers
 
+  const fetchCustomerOrders = useCallback(async () => {
+    if (!customerId || !canManageCustomers) return;
+
+    setIsLoadingOrders(true);
+    setOrdersError(null);
+    try {
+      const response = await fetch(`/api/admin/orders?customerId=${customerId}&limit=${showAllOrders ? 100 : 5}&page=1`);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      }
+      const result = await response.json();
+      setOrders(result.orders || []);
+    } catch (err: any) {
+      setOrdersError(err.message || 'Failed to fetch customer orders.');
+      setOrders([]);
+    } finally {
+      setIsLoadingOrders(false);
+    }
+  }, [customerId, canManageCustomers, showAllOrders]);
+
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
       router.replace('/admin/login');
@@ -96,6 +171,13 @@ export default function CustomerDetailsPage() {
       fetchCustomerDetails();
     }
   }, [authStatus, router, customerId, fetchCustomerDetails]);
+
+  useEffect(() => {
+    // Fetch orders when customer is loaded and user has permissions
+    if (customer && canManageCustomers) {
+      fetchCustomerOrders();
+    }
+  }, [customer, canManageCustomers, fetchCustomerOrders]);
 
   const handleIsActiveToggle = async () => {
      if (customer === null || currentIsActive === customer.isActive) {
@@ -105,18 +187,17 @@ export default function CustomerDetailsPage() {
      setIsUpdatingStatus(true);
      setError(null);
      try {
-         // The PUT /api/admin/customers/[id] endpoint can handle isActive updates
+         // Send only the isActive field for a partial update
          const response = await fetch(`/api/admin/customers/${customerId}`, {
              method: 'PUT',
              headers: { 'Content-Type': 'application/json' },
              body: JSON.stringify({
-                // Send other necessary fields from customer to prevent accidental wiping if API expects full update
-                // Or ensure API can handle partial updates for just 'isActive'
-                // For now, assuming API can handle partial {isActive: boolean}
                 firstName: customer.firstName,
                 lastName: customer.lastName,
                 email: customer.email,
-                isActive: currentIsActive
+                phoneNumber: customer.phoneNumber,
+                isActive: currentIsActive,
+                addresses: customer.addresses || []
             }),
          });
          const result = await response.json();
@@ -240,12 +321,12 @@ export default function CustomerDetailsPage() {
          <Grid.Col span={{ base: 12, md: 5 }}>
               <Card withBorder p="md" radius="md" mb="lg">
                  <Group gap="xs" mb="sm" align="center">
-                     <ThemeIcon variant="light" color={getStatusColor(currentIsActive)} size="xl" radius="md">
+                     <ThemeIcon variant="light" color={getAccountStatusColor(currentIsActive)} size="xl" radius="md">
                          {currentIsActive ? <IconUserCheck size="1.5rem" /> : <IconUserOff size="1.5rem" />}
                      </ThemeIcon>
                      <div>
                          <Text fw={700}>Account Status</Text>
-                         <Badge color={getStatusColor(currentIsActive)} size="lg" radius="sm" variant="filled">
+                         <Badge color={getAccountStatusColor(currentIsActive)} size="lg" radius="sm" variant="filled">
                              {currentIsActive ? 'Active' : 'Inactive'}
                          </Badge>
                      </div>
@@ -278,9 +359,146 @@ export default function CustomerDetailsPage() {
                  {!canManageCustomers && <Text size="sm" c="dimmed">You do not have permission to change account status.</Text>}
              </Card>
              <Paper withBorder shadow="sm" p="md" radius="md">
-                 <Title order={4} mb="sm">Order History (Placeholder)</Title>
-                 <Text c="dimmed">Customer&apos;s order history summary will be displayed here.</Text>
-                 <Button variant="outline" size="xs" mt="sm" component={Link} href={`/admin/orders?customerId=${customer?._id || ''}`}>View All Orders</Button>
+                 <Group justify="space-between" align="center" mb="md">
+                     <Group gap="xs">
+                         <ThemeIcon variant="light" size="lg" radius="md">
+                             <IconShoppingCart size="1.5rem" />
+                         </ThemeIcon>
+                         <Title order={4}>Order History</Title>
+                         {orders.length > 0 && (
+                             <Badge variant="light" color="blue">
+                                 {orders.length} order{orders.length !== 1 ? 's' : ''}
+                             </Badge>
+                         )}
+                     </Group>
+                     {orders.length > 5 && !showAllOrders && (
+                         <Button 
+                             variant="outline" 
+                             size="xs" 
+                             onClick={() => setShowAllOrders(true)}
+                             loading={isLoadingOrders}
+                         >
+                             Show All Orders
+                         </Button>
+                     )}
+                     {orders.length > 0 && (
+                         <Button 
+                             variant="outline" 
+                             size="xs" 
+                             component={Link} 
+                             href={`/admin/orders?customerId=${customer?._id || ''}`}
+                             leftSection={<IconReceipt size={14} />}
+                         >
+                             View in Orders Page
+                         </Button>
+                     )}
+                 </Group>
+
+                 {ordersError && (
+                     <Alert color="red" mb="md" icon={<IconAlertCircle />}>
+                         {ordersError}
+                     </Alert>
+                 )}
+
+                 {isLoadingOrders ? (
+                     <LoadingOverlay visible={true} overlayProps={{ radius: 'sm', blur: 1 }} />
+                 ) : orders.length === 0 ? (
+                     <Text c="dimmed" ta="center" py="xl">
+                         No orders found for this customer.
+                     </Text>
+                 ) : (
+                     <ScrollArea>
+                         <Table striped highlightOnHover verticalSpacing="sm" miw={700}>
+                             <Table.Thead>
+                                 <Table.Tr>
+                                     <Table.Th>Order ID</Table.Th>
+                                     <Table.Th>Date</Table.Th>
+                                     <Table.Th>Total</Table.Th>
+                                     <Table.Th>Payment</Table.Th>
+                                     <Table.Th>Status</Table.Th>
+                                     <Table.Th>Items</Table.Th>
+                                     <Table.Th>Actions</Table.Th>
+                                 </Table.Tr>
+                             </Table.Thead>
+                             <Table.Tbody>
+                                 {orders.map((order) => (
+                                     <Table.Tr key={order._id}>
+                                         <Table.Td>
+                                             <Link href={`/admin/orders/${order._id}`} passHref legacyBehavior>
+                                                 <Text component="a" c="blue.6" fw={500} size="sm">
+                                                     #{order.orderNumber || order._id.substring(0, 8) + '...'}
+                                                 </Text>
+                                             </Link>
+                                         </Table.Td>
+                                         <Table.Td>
+                                             <Text size="sm">
+                                                 {dayjs(order.createdAt).format('MMM D, YYYY')}
+                                             </Text>
+                                             <Text size="xs" c="dimmed">
+                                                 {dayjs(order.createdAt).format('h:mm A')}
+                                             </Text>
+                                         </Table.Td>
+                                         <Table.Td>
+                                             <Text fw={500} size="sm">
+                                                 ${order.totalAmount.toFixed(2)}
+                                             </Text>
+                                         </Table.Td>
+                                         <Table.Td>
+                                             <Badge 
+                                                 color={getPaymentStatusColor(order.paymentStatus)} 
+                                                 variant="light" 
+                                                 radius="sm"
+                                                 size="sm"
+                                             >
+                                                 {order.paymentStatus.charAt(0).toUpperCase() + order.paymentStatus.slice(1)}
+                                             </Badge>
+                                         </Table.Td>
+                                         <Table.Td>
+                                             <Badge 
+                                                 color={getStatusColor(order.status)} 
+                                                 variant="light" 
+                                                 radius="sm"
+                                                 size="sm"
+                                             >
+                                                 {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                                             </Badge>
+                                         </Table.Td>
+                                         <Table.Td>
+                                             <Text size="sm">
+                                                 {order.orderItems.reduce((acc, item) => acc + item.quantity, 0)} item{order.orderItems.reduce((acc, item) => acc + item.quantity, 0) !== 1 ? 's' : ''}
+                                             </Text>
+                                         </Table.Td>
+                                         <Table.Td>
+                                             <Menu shadow="md" width={180} withinPortal position="bottom-end">
+                                                 <Menu.Target>
+                                                     <ActionIcon variant="subtle" color="gray" size="sm">
+                                                         <IconDotsVertical size={16} />
+                                                     </ActionIcon>
+                                                 </Menu.Target>
+                                                 <Menu.Dropdown>
+                                                     <Menu.Item 
+                                                         leftSection={<IconEye size={14} />} 
+                                                         component={Link} 
+                                                         href={`/admin/orders/${order._id}`}
+                                                     >
+                                                         View Details
+                                                     </Menu.Item>
+                                                     <Menu.Item 
+                                                         leftSection={<IconEdit size={14} />} 
+                                                         component={Link} 
+                                                         href={`/admin/orders/${order._id}/edit`}
+                                                     >
+                                                         Edit Order
+                                                     </Menu.Item>
+                                                 </Menu.Dropdown>
+                                             </Menu>
+                                         </Table.Td>
+                                     </Table.Tr>
+                                 ))}
+                             </Table.Tbody>
+                         </Table>
+                     </ScrollArea>
+                 )}
              </Paper>
          </Grid.Col>
      </Grid>

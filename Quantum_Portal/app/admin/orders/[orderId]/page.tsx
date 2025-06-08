@@ -1,14 +1,15 @@
 'use client';
 
 import AdminLayout from '../../../../components/admin/AdminLayout';
-import { Title, Text, Paper, Group, Button, LoadingOverlay, Alert, Select, Divider, Table, Image, Grid, Card, Badge, Space, ThemeIcon, ScrollArea } from '@mantine/core';
-import { IconAlertCircle, IconDeviceFloppy, IconTruckDelivery, IconFileInvoice, IconUserCircle, IconMapPin, IconReceipt, IconEdit, IconArrowLeft } from '@tabler/icons-react';
+import { Title, Text, Paper, Group, Button, LoadingOverlay, Alert, Select, Divider, Table, Image, Grid, Card, Badge, Space, ThemeIcon, ScrollArea, Box, ActionIcon, Tooltip } from '@mantine/core';
+import { IconAlertCircle, IconDeviceFloppy, IconTruckDelivery, IconFileInvoice, IconUserCircle, IconMapPin, IconReceipt, IconEdit, IconArrowLeft, IconCopy, IconCheck, IconExternalLink } from '@tabler/icons-react';
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { notifications } from '@mantine/notifications';
 import dayjs from 'dayjs';
+import BrandDisplay from '../../../../components/common/BrandDisplay';
 
 // Interfaces
 interface ProductImage { // Assuming Product model has images structured like this if populated
@@ -35,6 +36,13 @@ interface OrderItem {
     // Variant-specific fields for consistency with create and edit order pages
     isVariantProduct?: boolean;
     variantId?: string;
+    // Brand information
+    brand?: { 
+        _id: string; 
+        name: string; 
+        slug: string;
+        logo?: string;
+    } | null;
 }
 interface Address { // Define a basic address structure
     fullName: string; // Required field
@@ -62,6 +70,7 @@ interface PaymentDetails { // Example structure
 }
 interface Order {
     _id: string;
+    orderNumber?: string; // MongoDB auto-generated order number
     customer?: OrderCustomer;
     orderItems: OrderItem[];
     totalAmount: number;
@@ -118,6 +127,7 @@ export default function OrderDetailsPage() {
   const [isUpdatingPaymentStatus, setIsUpdatingPaymentStatus] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedOrderStatus, setSelectedOrderStatus] = useState<string>('');
+  const [copiedOrderNumber, setCopiedOrderNumber] = useState(false);
   // No selectedPaymentStatus state needed if using buttons or direct calls
 
   const fetchOrderDetails = useCallback(async () => {
@@ -257,10 +267,41 @@ export default function OrderDetailsPage() {
     ? `${order.customer.firstName || ''} ${order.customer.lastName || ''}`.trim() || order.customer.email
     : 'Guest Customer';
 
+  const handleCopyOrderNumber = async () => {
+    if (!order) return;
+    
+    const orderNumberToCopy = order.orderNumber || `${order._id.substring(0, 8)}...`;
+    
+    try {
+      await navigator.clipboard.writeText(orderNumberToCopy);
+      setCopiedOrderNumber(true);
+      notifications.show({
+        title: 'Copied!',
+        message: 'Order number copied to clipboard',
+        color: 'green',
+        icon: <IconCheck size={16} />,
+      });
+      
+      // Reset the copied state after 2 seconds
+      setTimeout(() => setCopiedOrderNumber(false), 2000);
+    } catch (err) {
+      notifications.show({
+        title: 'Failed to copy',
+        message: 'Could not copy to clipboard',
+        color: 'red',
+      });
+    }
+  };
+
   return (
     <AdminLayout>
       <Group justify="space-between" mb="xl">
-        <Title order={2}>Order Details</Title>
+        <div>
+          <Title order={2}>Order Details</Title>
+          <Text size="sm" c="dimmed" mt={4}>
+            Order #{order.orderNumber || order._id.substring(0, 8) + '...'}
+          </Text>
+        </div>
         <Button variant="outline" onClick={() => router.push('/admin/orders')} leftSection={<IconArrowLeft size={16}/>}>Back to Orders</Button>
       </Group>
 
@@ -332,7 +373,33 @@ export default function OrderDetailsPage() {
                                         <Group gap="sm" wrap="nowrap">
                                             <Image src={imageUrl} alt={itemName} w={40} h={40} fit="contain" radius="sm" />
                                             <div>
-                                                <Text size="sm" fw={500}>{itemName}</Text>
+                                                {(item as any).brand && (
+                                                    <Box mb={4}>
+                                                        <BrandDisplay 
+                                                            brand={(item as any).brand} 
+                                                            size="xs" 
+                                                            showName={true} 
+                                                            compact={true} 
+                                                        />
+                                                    </Box>
+                                                )}
+                                                {product?._id ? (
+                                                    <Group gap={4} align="center">
+                                                        <Text
+                                                            component={Link}
+                                                            href={`/admin/products/${product._id}`}
+                                                            size="sm"
+                                                            fw={500}
+                                                            style={{ textDecoration: 'none', color: 'inherit' }}
+                                                            className="hover:underline hover:text-blue-600 cursor-pointer"
+                                                        >
+                                                            {itemName}
+                                                        </Text>
+                                                        <IconExternalLink size={12} style={{ opacity: 0.6 }} />
+                                                    </Group>
+                                                ) : (
+                                                    <Text size="sm" fw={500} c="dimmed">{itemName}</Text>
+                                                )}
                                                 {item.isVariantProduct && item.variantId && (
                                                     <Badge size="xs" variant="light" color="blue" mt={2}>
                                                         Variant Product
@@ -368,15 +435,35 @@ export default function OrderDetailsPage() {
          </Grid.Col>
 
          <Grid.Col span={{ base: 12, lg: 4 }}>
-              <Card withBorder p="md" radius="md" mb="lg">
-                 <Group gap="xs" mb="sm" align="center">
-                     <ThemeIcon variant="light" color={getStatusColor(order.status)} size="xl" radius="md"><IconFileInvoice size="1.5rem" /></ThemeIcon>
-                     <div>
-                         <Text fw={500} size="sm">Order ID</Text>
-                         <Text size="xs" c="dimmed">{order._id}</Text>
-                     </div>
-                 </Group>
-                 <Text size="xs" c="dimmed" mt={-5} mb="sm">Placed on: {dayjs(order.createdAt).format('MMM D, YYYY h:mm A')}</Text>
+             {/* Prominent Order Number Section */}
+             <Paper withBorder p="lg" radius="md" mb="lg" shadow="sm">
+               <Group justify="space-between" align="center" mb="md">
+                 <div>
+                   <Text size="xs" c="dimmed" mb={4} tt="uppercase" fw={600}>Order Number</Text>
+                   <Group gap="xs" align="center">
+                     <ThemeIcon variant="light" color={getStatusColor(order.status)} size="lg" radius="md">
+                       <IconFileInvoice size="1.4rem" />
+                     </ThemeIcon>
+                     <Text fw={700} size="xl" ff="monospace">
+                       #{order.orderNumber || order._id.substring(0, 8) + '...'}
+                     </Text>
+                   </Group>
+                 </div>
+                 <Tooltip label={copiedOrderNumber ? "Copied!" : "Copy order number"}>
+                   <ActionIcon 
+                     variant="light" 
+                     color={copiedOrderNumber ? "green" : "blue"}
+                     size="xl"
+                     onClick={handleCopyOrderNumber}
+                   >
+                     {copiedOrderNumber ? <IconCheck size={20} /> : <IconCopy size={20} />}
+                   </ActionIcon>
+                 </Tooltip>
+               </Group>
+               <Text size="sm" c="dimmed">Placed on: {dayjs(order.createdAt).format('MMM D, YYYY h:mm A')}</Text>
+             </Paper>
+
+             <Paper withBorder p="md" radius="md" mb="lg">
 
                  <Divider my="sm" />
                  <Text fw={500} size="sm">Payment Method:</Text>
@@ -428,7 +515,7 @@ export default function OrderDetailsPage() {
                      Update Order Status
                  </Button>
                  <Button component={Link} href={`/admin/orders/${orderId}/edit`} fullWidth variant="outline" mt="sm">Edit Full Order</Button>
-             </Card>
+             </Paper>
 
              {order.customer && (
                  <Paper withBorder shadow="sm" p="md" radius="md" mb="lg">

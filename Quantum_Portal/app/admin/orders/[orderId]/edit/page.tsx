@@ -8,6 +8,7 @@ import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import { useDebouncedCallback } from '@mantine/hooks';
 import { IconAlertCircle, IconSearch, IconUserCheck, IconPlus, IconTrash, IconShoppingCart, IconPackage, IconDeviceFloppy, IconEdit, IconClock, IconCheck, IconAlertTriangle } from '@tabler/icons-react';
+import BrandDisplay from '../../../../../components/common/BrandDisplay';
 
 // Interfaces (should align with Order model and previous page definitions)
 interface PaymentMethodOption {
@@ -40,6 +41,13 @@ interface OrderItem {
     // Variant-specific fields for consistency with create order page
     isVariantProduct?: boolean;
     variantId?: string;
+    // Brand information
+    brand?: { 
+        _id: string; 
+        name: string; 
+        slug: string;
+        logo?: string;
+    } | null;
 }
 
 // Interface for product search results (same as create order)
@@ -51,6 +59,7 @@ interface SearchProductData {
     stockQuantity: number;
     images: string[];
     category: { _id: string; name: string; slug: string } | null;
+    brand: { _id: string; name: string; slug: string; logo?: string } | null;
     displayText: string;
     customAttributes: { [key: string]: string };
     availableAttributes: { [key: string]: string[] };
@@ -86,6 +95,7 @@ interface FormValues {
 // Interface for the fetched order data (align with Order model and API response)
 interface FetchedOrder {
     _id: string;
+    orderNumber?: string; // MongoDB auto-generated order number
     customer?: { _id: string; firstName?: string; lastName?: string; email: string; };
     orderItems: Array<{
         _id?: string;
@@ -138,6 +148,7 @@ export default function EditOrderPage() {
   const [isLoading, setIsLoading] = useState(true); // For initial order fetch
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [orderNumber, setOrderNumber] = useState<string | null>(null);
 
   const [paymentMethodOptions, setPaymentMethodOptions] = useState<PaymentMethodOption[]>([]);
   const [isLoadingPaymentMethods, setIsLoadingPaymentMethods] = useState(true);
@@ -252,11 +263,18 @@ export default function EditOrderPage() {
                     ? (item as any).isVariantProduct 
                     : !!(selectedAttributes && Object.keys(selectedAttributes).length > 0 && (item as any).variantId),
                 variantId: (item as any).variantId || undefined,
+                // Extract brand information from stored brand data or populated product
+                brand: (item as any).brand || 
+                       (typeof item.product !== 'string' && item.product && (item.product as any).brand) || 
+                       null,
                 product: item.product // Keep original product for display if needed
             };
         }),
         selectedCustomerId: orderData.customer?._id || null,
       });
+
+      // Set the order number for display
+      setOrderNumber(orderData.orderNumber || null);
 
     } catch (err: any) {
       setError(err.message);
@@ -410,6 +428,7 @@ export default function EditOrderPage() {
       stockQuantity: 99, // We don't have stock info in order, so use high number
       images: item.image ? [item.image] : [],
       category: null,
+      brand: item.brand || null,
       displayText: item.name,
       customAttributes: item.product && typeof item.product !== 'string' ? item.product.customAttributes || {} : {},
       availableAttributes: item.product && typeof item.product !== 'string' ? item.product.availableAttributes || {} : {},
@@ -515,6 +534,7 @@ export default function EditOrderPage() {
         selectedAttributes,
         isVariantProduct: product.hasVariants,
         variantId,
+        brand: product.brand,
         product: {
           _id: product._id,
           name: product.name,
@@ -676,6 +696,7 @@ export default function EditOrderPage() {
             selectedAttributes: item.selectedAttributes || {}, // Include selectedAttributes
             isVariantProduct: item.isVariantProduct || false, // Include variant product flag
             variantId: item.variantId, // Include variant ID if applicable
+            brand: item.brand, // Include brand information
             _id: item._id // Keep _id for existing items if backend needs it to identify them
         })),
         // customerId is not typically changed during order edit.
@@ -720,7 +741,7 @@ export default function EditOrderPage() {
   return (
     <AdminLayout>
       <Title order={2} mb="xl">
-        Edit Order {orderId?.substring(0,8)}...
+        Edit Order #{orderNumber || orderId?.substring(0,8) + '...'}
       </Title>
 
       <Paper component="form" onSubmit={form.onSubmit(handleSubmit)} shadow="sm" p="xl" radius="md" withBorder pos="relative">
@@ -899,7 +920,7 @@ export default function EditOrderPage() {
               {form.values.orderItems.map((item, index) => (
                 <Paper key={item._id || item.productId || index} withBorder p="sm" radius="sm">
                   <Grid align="center">
-                    <Grid.Col span={{ base: 12, sm: 2 }}>
+                    <Grid.Col span={{ base: 12, sm: 1.5 }}>
                       {item.image ? (
                         <Image
                           src={item.image}
@@ -921,16 +942,29 @@ export default function EditOrderPage() {
                       )}
                     </Grid.Col>
                     
-                    <Grid.Col span={{ base: 12, sm: 4 }}>
+                    <Grid.Col span={{ base: 12, sm: 3.5 }}>
+                      {item.brand && (
+                        <Box mb={4}>
+                          <BrandDisplay 
+                            brand={item.brand} 
+                            size="xs" 
+                            showName={true} 
+                            compact={true} 
+                          />
+                        </Box>
+                      )}
                       <Text fw={500} size="sm">{item.name}</Text>
                       <Text size="xs" c="dimmed">SKU: {item.sku || (typeof item.product !== 'string' && item.product?.sku) || 'N/A'}</Text>
+                    </Grid.Col>
+
+                    <Grid.Col span={{ base: 12, sm: 2 }}>
                       {item.isVariantProduct && item.variantId && (
-                        <Badge size="xs" variant="light" color="blue" mt={2}>
+                        <Badge size="xs" variant="light" color="blue" mb={2}>
                           Variant Product
                         </Badge>
                       )}
                       {item.selectedAttributes && Object.keys(item.selectedAttributes).length > 0 && (
-                        <Group gap={4} mt={2}>
+                        <Group gap={4}>
                           {Object.entries(item.selectedAttributes).map(([key, value]) => (
                             <Badge key={key} size="xs" variant="outline">
                               {key}: {value}
@@ -938,13 +972,16 @@ export default function EditOrderPage() {
                           ))}
                         </Group>
                       )}
+                      {(!item.selectedAttributes || Object.keys(item.selectedAttributes).length === 0) && !item.isVariantProduct && (
+                        <Text size="xs" c="dimmed">No attributes</Text>
+                      )}
                     </Grid.Col>
 
-                    <Grid.Col span={{ base: 6, sm: 2 }}>
+                    <Grid.Col span={{ base: 6, sm: 1.5 }}>
                       <Text size="sm" fw={500}>${item.price.toFixed(2)}</Text>
                     </Grid.Col>
 
-                    <Grid.Col span={{ base: 4, sm: 2 }}>
+                    <Grid.Col span={{ base: 4, sm: 1.5 }}>
                       <NumberInput
                         value={item.quantity}
                         onChange={(value) => handleItemQuantityChange(index, Number(value) || 1)}
@@ -1026,7 +1063,7 @@ export default function EditOrderPage() {
                 fit="cover"
                 fallbackSrc="/placeholder-image.png"
               />
-              <div>
+              <div style={{ flex: 1 }}>
                 <Text fw={600}>{selectedProductForAttributes.name}</Text>
                 <Text size="sm" c="dimmed">
                   SKU: {selectedProductForAttributes.hasVariants && variantSku ? variantSku : selectedProductForAttributes.sku}
@@ -1043,6 +1080,16 @@ export default function EditOrderPage() {
                   <Text size="sm" c="blue">${selectedProductForAttributes.price.toFixed(2)}</Text>
                 )}
               </div>
+              {selectedProductForAttributes.brand && (
+                <div>
+                  <BrandDisplay 
+                    brand={selectedProductForAttributes.brand} 
+                    size="sm" 
+                    showName={true}
+                    compact={true}
+                  />
+                </div>
+              )}
             </Group>
 
             <Divider />

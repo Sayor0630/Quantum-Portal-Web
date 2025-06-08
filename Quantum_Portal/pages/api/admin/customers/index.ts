@@ -37,6 +37,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         { email: { $regex: searchQuery, $options: 'i' } },
         { firstName: { $regex: searchQuery, $options: 'i' } },
         { lastName: { $regex: searchQuery, $options: 'i' } },
+        { phoneNumber: { $regex: searchQuery, $options: 'i' } }, // Added phone number search
       ];
     }
     if (status === 'active') {

@@ -16,6 +16,7 @@ interface Customer {
   firstName?: string;
   lastName?: string;
   email: string;
+  phoneNumber?: string;
   isActive: boolean;
   createdAt: string;
   // orderCount?: number;
@@ -117,6 +118,7 @@ export default function CustomersPage() {
     <Table.Tr key={customer._id}>
       <Table.Td>{`${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'N/A'}</Table.Td>
       <Table.Td>{customer.email}</Table.Td>
+      <Table.Td>{customer.phoneNumber || 'N/A'}</Table.Td>
       <Table.Td>{dayjs(customer.createdAt).format('MMM D, YYYY')}</Table.Td>
       {/* <Table.Td>{customer.orderCount !== undefined ? customer.orderCount : 'N/A'}</Table.Td> */}
       <Table.Td>
@@ -170,7 +172,7 @@ export default function CustomersPage() {
       <Paper withBorder shadow="sm" radius="md" p="md" mb="xl">
          <Group grow>
              <TextInput
-                 placeholder="Search by name or email..."
+                 placeholder="Search by name, email, or phone..."
                  leftSection={<IconSearch size={16} />}
                  value={searchTerm}
                  onChange={handleSearchChange}
@@ -209,6 +211,7 @@ export default function CustomersPage() {
                      <Table.Tr>
                          <Table.Th>Name</Table.Th>
                          <Table.Th>Email</Table.Th>
+                         <Table.Th>Phone</Table.Th>
                          <Table.Th>Registered</Table.Th>
                          {/* <Table.Th>Orders</Table.Th> */}
                          <Table.Th>Status</Table.Th>

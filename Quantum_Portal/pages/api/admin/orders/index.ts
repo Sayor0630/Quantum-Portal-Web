@@ -32,46 +32,100 @@ async function handleGetOrders(req: NextApiRequest, res: NextApiResponse) {
     const limit = parseInt(req.query.limit as string) || 10;
     const status = req.query.status as string;
     const customerId = req.query.customerId as string;
+    const search = req.query.search as string; // Add search parameter
     const dateFrom = req.query.dateFrom as string; // Expect YYYY-MM-DD
     const dateTo = req.query.dateTo as string;     // Expect YYYY-MM-DD
     const sortField = req.query.sortField as string || 'createdAt';
     const sortOrder = (req.query.sortOrder as string === 'asc') ? 1 : -1;
 
-
-    const query: any = {};
-    if (status) query.status = status;
-    if (customerId && mongoose.Types.ObjectId.isValid(customerId)) {
-      query.customer = new mongoose.Types.ObjectId(customerId);
-    }
-    if (dateFrom) {
-      const startDate = new Date(dateFrom);
-      startDate.setHours(0,0,0,0); // Start of the day
-      query.createdAt = { ...query.createdAt, $gte: startDate };
-    }
-    if (dateTo) {
-      const endDate = new Date(dateTo);
-      endDate.setHours(23,59,59,999); // End of the day
-      query.createdAt = { ...query.createdAt, $lte: endDate };
-    }
-
+    // Build query with all filters including search
     const sortCriteria: any = {};
     sortCriteria[sortField] = sortOrder;
 
+    // Build query using $and structure (like product search)
+    const queryConditions: any[] = [];
+    
+    // Add existing filters as separate conditions
+    if (status) {
+      queryConditions.push({ status: status });
+    }
+    
+    if (customerId && mongoose.Types.ObjectId.isValid(customerId)) {
+      queryConditions.push({ customer: new mongoose.Types.ObjectId(customerId) });
+    }
+    
+    if (dateFrom) {
+      const startDate = new Date(dateFrom);
+      startDate.setHours(0,0,0,0);
+      queryConditions.push({ createdAt: { $gte: startDate } });
+    }
+    
+    if (dateTo) {
+      const endDate = new Date(dateTo);
+      endDate.setHours(23,59,59,999);
+      queryConditions.push({ createdAt: { $lte: endDate } });
+    }
 
-    const orders = await Order.find(query)
+    // Add search criteria if search term is provided
+    if (search && search.trim().length >= 1) {
+      const searchTerm = search.trim();
+      const searchOr: any[] = [];
+
+      // Search by order ID if it's a valid ObjectId
+      if (mongoose.Types.ObjectId.isValid(searchTerm)) {
+        searchOr.push({ _id: new mongoose.Types.ObjectId(searchTerm) });
+      }
+
+      // Search by order number (partial match, case insensitive)
+      searchOr.push({ orderNumber: { $regex: searchTerm, $options: 'i' } });
+
+      // Only search by customer details if no customer filter is active
+      if (!customerId) {
+        // Get customer IDs that match the search term
+        const matchingCustomers = await Customer.find({
+          $or: [
+            { email: { $regex: searchTerm, $options: 'i' } },
+            { firstName: { $regex: searchTerm, $options: 'i' } },
+            { lastName: { $regex: searchTerm, $options: 'i' } }
+          ]
+        }).select('_id').lean();
+
+        const customerIds = matchingCustomers.map(customer => customer._id);
+        
+        // Add customer search to OR conditions
+        if (customerIds.length > 0) {
+          searchOr.push({ customer: { $in: customerIds } });
+        }
+      }
+
+      // Always add search condition when search term is provided
+      // If no matches found, add an impossible condition to return empty results
+      if (searchOr.length > 0) {
+        queryConditions.push({ $or: searchOr });
+      } else {
+        // No matches found for search term - return empty results
+        queryConditions.push({ _id: null }); // This will match nothing
+      }
+    }
+
+    // Build final query
+    const finalQuery = queryConditions.length > 0 ? { $and: queryConditions } : {};
+
+    // Use regular find for all cases (exactly like product search)
+    const orders = await Order.find(finalQuery)
       .populate({ path: 'customer', model: Customer, select: 'firstName lastName email' })
       .populate({
           path: 'orderItems.product',
           model: Product,
           select: 'name sku price images',
-          // Not populating product.category here to keep list view lighter
       })
       .sort(sortCriteria)
       .skip((page - 1) * limit)
       .limit(limit)
-      .lean(); // Use .lean() for faster queries if not modifying docs before sending
+      .lean();
 
-    const totalOrders = await Order.countDocuments(query);
+    const totalOrders = await Order.countDocuments(finalQuery);
+
     const totalPages = Math.ceil(totalOrders / limit);
 
     return res.status(200).json({
@@ -89,6 +143,8 @@ async function handleGetOrders(req: NextApiRequest, res: NextApiResponse) {
 
 async function handleCreateOrder(req: NextApiRequest, res: NextApiResponse) {
   try {
+    console.log('DEBUG: Incoming order creation request body:', JSON.stringify(req.body, null, 2));
+    
     const {
       customerId,
       customerFirstName,
@@ -152,7 +208,7 @@ async function handleCreateOrder(req: NextApiRequest, res: NextApiResponse) {
         return res.status(400).json({ message: 'Invalid product ID in order items' });
       }
 
-      const product = await Product.findById(item.product);
+      const product = await Product.findById(item.product).populate('brand', 'name slug logo');
       if (!product) {
         return res.status(400).json({ message: `Product not found: ${item.product}` });
       }
@@ -229,6 +285,39 @@ async function handleCreateOrder(req: NextApiRequest, res: NextApiResponse) {
 
       console.log(`Final item details - Name: ${product.name}, SKU: ${sku}, Price: ${price}, Quantity: ${quantity}, Total: ${itemTotal}`);
 
+      // Prepare brand information (use from request if available, otherwise from product)
+      let brandInfo: any = null;
+      console.log('DEBUG: Processing brand for item:', {
+        itemBrand: item.brand,
+        productBrand: product.brand,
+        productName: product.name
+      });
+      
+      if (item.brand && item.brand._id) {
+        // Use brand info from the frontend request
+        brandInfo = {
+          _id: new mongoose.Types.ObjectId(item.brand._id),
+          name: item.brand.name,
+          slug: item.brand.slug,
+          logo: item.brand.logo
+        };
+        console.log('DEBUG: Using brand from frontend request:', brandInfo);
+      } else if (product.brand) {
+        // Fallback to brand from product (need to populate it)
+        const populatedBrand = product.brand as any;
+        if (populatedBrand && populatedBrand._id) {
+          brandInfo = {
+            _id: populatedBrand._id,
+            name: populatedBrand.name,
+            slug: populatedBrand.slug,
+            logo: populatedBrand.logo
+          };
+          console.log('DEBUG: Using brand from populated product:', brandInfo);
+        }
+      }
+      
+      console.log('DEBUG: Final brandInfo before adding to order item:', brandInfo);
+
       processedOrderItems.push({
         product: product._id as mongoose.Types.ObjectId,
         name: product.name,
@@ -237,6 +326,7 @@ async function handleCreateOrder(req: NextApiRequest, res: NextApiResponse) {
         quantity,
         image: itemImage,
         selectedAttributes,
+        brand: brandInfo,
         // Add variant product fields
         isVariantProduct: item.isVariantProduct || product.hasVariants || false,
         variantId: item.variantId || (variant ? variant._id : undefined)
@@ -255,7 +345,9 @@ async function handleCreateOrder(req: NextApiRequest, res: NextApiResponse) {
       deliveryNote: notes || ''
     });
 
+    console.log('DEBUG: Order before saving:', JSON.stringify(newOrder.toObject(), null, 2));
     await newOrder.save();
+    console.log('DEBUG: Order after saving:', JSON.stringify(newOrder.toObject(), null, 2));
 
     // Populate the order for response
     const populatedOrder = await Order.findById(newOrder._id)

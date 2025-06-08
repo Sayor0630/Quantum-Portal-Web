@@ -13,6 +13,7 @@ interface ProductCardProps {
     images?: string[]; // Expecting array of URLs
     slug?: string;
     sku?: string;
+    brand?: { name: string; slug: string };
     // category?: { name: string; slug: string };
     // customAttributes?: Record<string, string>;
     // Add other fields like description if you want to show snippets
@@ -43,6 +44,11 @@ export default function ProductCard({ product }: ProductCardProps) {
       </Card.Section>
 
       <Box mt="md" mb="xs" style={{flexGrow: 1}}> {/* Added flexGrow to allow title to take space */}
+        {product.brand && (
+          <Text size="sm" c="dimmed" mb={4}>
+            {product.brand.name}
+          </Text>
+        )}
         <Link href={linkHref} passHref legacyBehavior>
             <Text component="a" className={classes.title} lineClamp={2} title={product.name}>
                 {product.name}

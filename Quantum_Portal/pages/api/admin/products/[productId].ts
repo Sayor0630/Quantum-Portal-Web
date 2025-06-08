@@ -4,6 +4,7 @@ import { authOptions } from '../../auth/[...nextauth]';
 import connectToDatabase from '../../../../lib/dbConnect';
 import Product from '../../../../models/Product';
 import Category from '../../../../models/Category';
+import Brand from '../../../../models/Brand';
 import mongoose from 'mongoose';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -26,6 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       try {
         const product = await Product.findById(productObjectId)
             .populate('category', 'name slug')
+            .populate('brand', 'name slug')
             .lean();
         if (!product) {
           return res.status(404).json({ message: 'Product not found' });
@@ -39,7 +41,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     case 'PUT':
       try {
         const {
-            name, description, price, sku, stockQuantity, category,
+            name, description, price, sku, stockQuantity, category, brand,
             tags, customAttributes, images,
             seoTitle, seoDescription,
             slug, isPublished, // Added slug and isPublished
@@ -125,6 +127,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             updateData.category = null;
         }
 
+        if (brand) {
+          if (!mongoose.Types.ObjectId.isValid(brand)) {
+             return res.status(400).json({ message: 'Invalid brand ID format for product brand' });
+          }
+          const brandExists = await Brand.findById(brand);
+          if (!brandExists) {
+            return res.status(404).json({ message: 'Brand not found' });
+          }
+          updateData.brand = new mongoose.Types.ObjectId(brand);
+        }
+
         if (sku && !hasVariants) {
             const existingProductBySku = await Product.findOne({ sku: sku, _id: { $ne: productObjectId } });
             if (existingProductBySku) {
@@ -146,7 +159,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           productObjectId,
           { $set: updateData },
           { new: true, runValidators: true }
-        ).populate('category', 'name slug');
+        ).populate('category', 'name slug').populate('brand', 'name slug');
 
         if (!updatedProduct) {
           return res.status(404).json({ message: 'Product not found for update' });

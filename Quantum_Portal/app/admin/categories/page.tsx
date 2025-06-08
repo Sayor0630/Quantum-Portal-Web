@@ -2,7 +2,7 @@
 
 import AdminLayout from '../../../components/admin/AdminLayout';
 import { Title, Text, Paper, Table, Group, Button, ActionIcon, LoadingOverlay, Alert, ScrollArea, Space, Badge } from '@mantine/core';
-import { IconPencil, IconTrash, IconPlus, IconAlertCircle, IconNetwork } from '@tabler/icons-react';
+import { IconPencil, IconTrash, IconPlus, IconAlertCircle, IconNetwork, IconEye } from '@tabler/icons-react';
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -144,7 +144,20 @@ export default function CategoriesPage() {
       <Table.Td>{category.parent?.name || <Text c="dimmed">-</Text>}</Table.Td>
       <Table.Td>
         <Group gap="xs">
-          <ActionIcon variant="subtle" color="blue" component={Link} href={`/admin/categories/edit/${category._id}`} aria-label={`Edit ${category.name}`}>
+          <ActionIcon 
+            variant="subtle" 
+            color="green" 
+            onClick={() => router.push(`/admin/categories/${category._id}`)}
+            aria-label={`View products in ${category.name}`}
+          >
+            <IconEye size={18} />
+          </ActionIcon>
+          <ActionIcon 
+            variant="subtle" 
+            color="blue" 
+            onClick={() => router.push(`/admin/categories/edit/${category._id}`)}
+            aria-label={`Edit ${category.name}`}
+          >
             <IconPencil size={18} />
           </ActionIcon>
           <ActionIcon
@@ -172,7 +185,7 @@ export default function CategoriesPage() {
 
       {error && !isLoading && (
          <Alert title="Error" color="red" icon={<IconAlertCircle />} withCloseButton onClose={() => setError(null)} mb="lg">
-             {error} Please try <Button variant="subtle" size="xs" onClick={fetchCategories}>reloading</Button>.
+             {error} Please try <Button variant="subtle" size="xs" onClick={() => fetchCategories()}>reloading</Button>.
          </Alert>
       )}
 

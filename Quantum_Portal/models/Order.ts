@@ -8,6 +8,13 @@ export interface IOrderItem extends Document {
   quantity: number;
   image?: string; // Denormalized product image
   selectedAttributes?: Map<string, string>; // Custom attributes selected for this order item (e.g., Color: Red, Size: Large)
+  // Brand information (denormalized for order history)
+  brand?: {
+    _id: Types.ObjectId;
+    name: string;
+    slug: string;
+    logo?: string;
+  };
   // Variant product fields
   isVariantProduct?: boolean; // Whether this order item is a variant product
   variantId?: string; // ID of the specific variant if applicable
@@ -21,6 +28,13 @@ const OrderItemSchema: Schema<IOrderItem> = new Schema({
   quantity: { type: Number, required: true, min: 1 },
   image: { type: String }, // Optional
   selectedAttributes: { type: Map, of: String }, // Custom attributes for this specific order item
+  // Brand information (denormalized for order history) - optional field
+  brand: {
+    _id: { type: Schema.Types.ObjectId, ref: 'Brand', required: false },
+    name: { type: String, trim: true, required: false },
+    slug: { type: String, trim: true, required: false },
+    logo: { type: String, trim: true, required: false }
+  },
   // Variant product fields
   isVariantProduct: { type: Boolean, default: false }, // Whether this order item is a variant product
   variantId: { type: String, trim: true }, // ID of the specific variant if applicable
@@ -29,6 +43,7 @@ const OrderItemSchema: Schema<IOrderItem> = new Schema({
 
 export interface IOrder extends Document {
   customer: Types.ObjectId; // Reference to Customer model
+  orderNumber: string; // Unique order number
   orderItems: IOrderItem[];
   totalAmount: number;
   status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled' | 'refunded' | 'failed' | 'completed' | 'on-hold';
@@ -76,6 +91,10 @@ export interface IOrder extends Document {
 const OrderSchema: Schema<IOrder> = new Schema(
   {
     customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
+    orderNumber: { 
+      type: String, 
+      unique: true
+    },
     orderItems: [OrderItemSchema],
     totalAmount: { type: Number, required: true, min: 0 },
     status: {
@@ -139,5 +158,27 @@ const OrderSchema: Schema<IOrder> = new Schema(
 OrderSchema.index({ customer: 1 });
 OrderSchema.index({ status: 1 });
 OrderSchema.index({ createdAt: -1 });
+
+// Pre-save hook to generate order number if not provided
+OrderSchema.pre('save', function(next) {
+  if (!this.orderNumber) {
+    // Generate robust but short order number: timestamp + random suffix
+    const timestamp = Math.floor(Date.now() / 1000).toString(36).toUpperCase();
+    const randomSuffix = Math.random().toString(36).substr(2, 4).toUpperCase();
+    this.orderNumber = `${timestamp}${randomSuffix}`;
+  }
+  next();
+});
+
+// Add validation to ensure orderNumber is always present
+OrderSchema.pre('validate', function(next) {
+  if (!this.orderNumber) {
+    // Generate robust but short order number: timestamp + random suffix
+    const timestamp = Math.floor(Date.now() / 1000).toString(36).toUpperCase();
+    const randomSuffix = Math.random().toString(36).substr(2, 4).toUpperCase();
+    this.orderNumber = `${timestamp}${randomSuffix}`;
+  }
+  next();
+});
 
 export default mongoose.models.Order || mongoose.model<IOrder>('Order', OrderSchema);

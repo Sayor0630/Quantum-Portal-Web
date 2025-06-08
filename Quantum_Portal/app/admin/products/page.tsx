@@ -1,17 +1,24 @@
 'use client';
 
 import AdminLayout from '../../../components/admin/AdminLayout';
-import { Title, Text, Paper, Table, Group, Button, ActionIcon, LoadingOverlay, Alert, Badge, ScrollArea, Pagination, TextInput, Select, Image, Space } from '@mantine/core';
-import { IconPencil, IconTrash, IconPlus, IconAlertCircle, IconSearch, IconFilter } from '@tabler/icons-react';
+import FilterPanel, { type FilterOption } from '../../../components/admin/FilterPanel';
+import { Title, Text, Paper, Table, Group, Button, ActionIcon, LoadingOverlay, Alert, Badge, ScrollArea, Pagination, Image, Space, Stack, MultiSelect } from '@mantine/core';
+import { IconPencil, IconTrash, IconPlus, IconAlertCircle, IconEye } from '@tabler/icons-react';
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useDebouncedValue } from '@mantine/hooks';
-import { modals } from '@mantine/modals'; // Import Modals
-import { notifications } from '@mantine/notifications'; // Import Notifications
+import { modals } from '@mantine/modals';
+import { notifications } from '@mantine/notifications';
 
 interface ProductCategory {
+   _id: string;
+   name: string;
+   slug: string;
+}
+
+interface ProductBrand {
    _id: string;
    name: string;
    slug: string;
@@ -24,9 +31,11 @@ interface Product {
   price: number;
   stockQuantity: number;
   category?: ProductCategory;
+  brand?: ProductBrand;
   images?: string[];
   isPublished?: boolean;
   hasVariants?: boolean;
+  createdAt?: string;
   variants?: Array<{
     _id?: string;
     attributeCombination: { [key: string]: string };
@@ -42,6 +51,23 @@ interface Category {
   name: string;
 }
 
+interface Brand {
+  _id: string;
+  name: string;
+}
+
+interface AttributeDefinition {
+  _id: string;
+  name: string;
+  values: string[];
+}
+
+interface AttributeFilter {
+  attributeId: string;
+  attributeName: string;
+  selectedValues: string[];
+}
+
 interface PaginatedProductsResponse {
      products: Product[];
      currentPage: number;
@@ -54,9 +80,9 @@ export default function ProductsPage() {
   const router = useRouter();
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [isLoading, setIsLoading] = useState(true); // General loading for fetch
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [deletingProductId, setDeletingProductId] = useState<string | null>(null); // For delete loading state
+  const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -64,10 +90,26 @@ export default function ProductsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm] = useDebouncedValue(searchTerm, 500);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [attributeDefinitions, setAttributeDefinitions] = useState<AttributeDefinition[]>([]);
+  
+  // Simple two-step attribute filtering
+  const [selectedAttributeIds, setSelectedAttributeIds] = useState<string[]>([]);
+  const [attributeValues, setAttributeValues] = useState<Record<string, string[]>>({});
+  
   const [isCategoriesLoading, setIsCategoriesLoading] = useState(true);
+  const [isBrandsLoading, setIsBrandsLoading] = useState(true);
+  const [isAttributesLoading, setIsAttributesLoading] = useState(true);
 
-  const fetchProducts = useCallback(async (page: number, search: string, categoryId: string | null) => {
+  const fetchProducts = useCallback(async (
+    page: number, 
+    search: string, 
+    categoryId: string | null, 
+    brandId: string | null, 
+    attributeFilters: Record<string, string[]>
+  ) => {
     setIsLoading(true);
     setError(null);
     try {
@@ -77,6 +119,21 @@ export default function ProductsPage() {
       });
       if (search) queryParams.append('search', search);
       if (categoryId) queryParams.append('categoryId', categoryId);
+      if (brandId) queryParams.append('brandId', brandId);
+      
+      // Add attribute filters using attribute names
+      Object.entries(attributeFilters).forEach(([attributeId, values]) => {
+        const attributeDefinition = attributeDefinitions.find(attr => attr._id === attributeId);
+        if (attributeDefinition) {
+          if (values && values.length > 0) {
+            // Filter by specific attribute values
+            queryParams.append(`attribute.${attributeDefinition.name}`, values.join(','));
+          } else {
+            // Filter by attribute existence (any value)
+            queryParams.append(`hasAttribute.${attributeDefinition.name}`, 'true');
+          }
+        }
+      });
 
       const response = await fetch(`/api/admin/products?${queryParams.toString()}`);
       if (!response.ok) {
@@ -93,17 +150,16 @@ export default function ProductsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [attributeDefinitions]);
 
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
       router.replace('/admin/login');
     }
     if (authStatus === 'authenticated') {
-      // Initial fetch or refetch when page, search, or category changes
-      fetchProducts(currentPage, debouncedSearchTerm, selectedCategory);
+      fetchProducts(currentPage, debouncedSearchTerm, selectedCategory, selectedBrand, attributeValues);
     }
-  }, [authStatus, router, currentPage, debouncedSearchTerm, selectedCategory, fetchProducts]);
+  }, [authStatus, router, currentPage, debouncedSearchTerm, selectedCategory, selectedBrand, attributeValues, fetchProducts]);
 
   useEffect(() => {
      const fetchCategories = async () => {
@@ -121,7 +177,42 @@ export default function ProductsPage() {
              setIsCategoriesLoading(false);
          }
      };
+
+     const fetchBrands = async () => {
+         if (authStatus !== 'authenticated') return;
+         setIsBrandsLoading(true);
+         try {
+             const response = await fetch('/api/admin/brands?limit=100');
+             if (!response.ok) throw new Error('Failed to fetch brands');
+             const data = await response.json();
+             setBrands(data.brands.map((brand: any) => ({ _id: brand._id, name: brand.name })));
+         } catch (e) {
+             console.error("Failed to load brands for filter:", e);
+             notifications.show({ title: 'Error', message: 'Could not load brands for filtering.', color: 'red' });
+         } finally {
+             setIsBrandsLoading(false);
+         }
+     };
+
+     const fetchAttributeDefinitions = async () => {
+         if (authStatus !== 'authenticated') return;
+         setIsAttributesLoading(true);
+         try {
+             const response = await fetch('/api/admin/attribute-definitions');
+             if (!response.ok) throw new Error('Failed to fetch attribute definitions');
+             const data = await response.json();
+             setAttributeDefinitions(data);
+         } catch (e) {
+             console.error("Failed to load attribute definitions for filter:", e);
+             notifications.show({ title: 'Error', message: 'Could not load attribute definitions for filtering.', color: 'red' });
+         } finally {
+             setIsAttributesLoading(false);
+         }
+     };
+
      fetchCategories();
+     fetchBrands();
+     fetchAttributeDefinitions();
   }, [authStatus]);
 
   const handleCategoryChange = (value: string | null) => {
@@ -129,16 +220,71 @@ export default function ProductsPage() {
     setCurrentPage(1);
   };
 
-  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(event.currentTarget.value);
+  const handleBrandChange = (value: string | null) => {
+    setSelectedBrand(value);
+    setCurrentPage(1);
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    setCurrentPage(1);
+  };
+
+  const handleAttributeChange = (attributeId: string, selectedValues: string[]) => {
+    setAttributeValues(prev => ({
+      ...prev,
+      [attributeId]: selectedValues
+    }));
+    setCurrentPage(1);
+  };
+
+  const handleSelectedAttributeIdsChange = (attributeIds: string[]) => {
+    setSelectedAttributeIds(attributeIds);
+    
+    // Update attribute values: add empty arrays for new attributes, remove unselected ones
+    setAttributeValues(prev => {
+      const newValues = { ...prev };
+      
+      // Remove values for attributes that are no longer selected
+      Object.keys(newValues).forEach(attrId => {
+        if (!attributeIds.includes(attrId)) {
+          delete newValues[attrId];
+        }
+      });
+      
+      // Add empty arrays for newly selected attributes (this will trigger filtering by attribute existence)
+      attributeIds.forEach(attrId => {
+        if (!(attrId in newValues)) {
+          newValues[attrId] = [];
+        }
+      });
+      
+      return newValues;
+    });
+    
+    setCurrentPage(1);
+  };
+
+  const handleAttributeValueChange = (attributeId: string, selectedValues: string[]) => {
+    setAttributeValues(prev => ({
+      ...prev,
+      [attributeId]: selectedValues
+    }));
+    setCurrentPage(1);
+  };
+
+  const handleClearFilters = () => {
+    setSearchTerm('');
+    setSelectedCategory(null);
+    setSelectedBrand(null);
+    setSelectedAttributeIds([]);
+    setAttributeValues({});
     setCurrentPage(1);
   };
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
-    // fetchProducts will be called by the useEffect listening to currentPage
   };
-
 
   const handleDeleteProduct = (productId: string, productName: string) => {
     modals.openConfirmModal({
@@ -168,19 +314,15 @@ export default function ProductsPage() {
                 }
 
                 setProducts((prevProducts) => prevProducts.filter(p => p._id !== productId));
-                // Optionally, refetch or adjust totalPages if on last page and it becomes empty
                 if (products.length === 1 && currentPage > 1) {
-                    setCurrentPage(currentPage - 1); // Go to previous page if current page becomes empty
+                    setCurrentPage(currentPage - 1);
                 } else {
-                    // If many items are on the page, or it's the first page, a refetch might be good
-                    // or simply rely on the local state update. For now, local update is primary.
-                    // To ensure data consistency after delete, especially with totalItems count for pagination:
-                    fetchProducts(currentPage, debouncedSearchTerm, selectedCategory);
+                    fetchProducts(currentPage, debouncedSearchTerm, selectedCategory, selectedBrand, attributeValues);
                 }
 
                 notifications.show({
                     title: 'Product Deleted',
-                    message: `Product &quot;${productName}&quot; has been successfully deleted.`,
+                    message: `Product "${productName}" has been successfully deleted.`,
                     color: 'green',
                     icon: <IconTrash size={16} />,
                 });
@@ -198,7 +340,6 @@ export default function ProductsPage() {
     });
   };
 
-
   if (authStatus === 'loading' || (isLoading && authStatus === 'authenticated' && products.length === 0 && !error) ) {
      return (
          <AdminLayout>
@@ -209,6 +350,16 @@ export default function ProductsPage() {
   if (authStatus === 'unauthenticated') {
      return <Text p="xl">Redirecting to login...</Text>;
   }
+
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
 
   const rows = products.map((product) => (
     <Table.Tr key={product._id}>
@@ -243,9 +394,13 @@ export default function ProductsPage() {
       </Table.Td>
       <Table.Td>{product.stockQuantity !== undefined ? product.stockQuantity : 'N/A'}</Table.Td>
       <Table.Td>{product.category?.name || 'Uncategorized'}</Table.Td>
-      {/* <Table.Td>{product.isPublished ? <Badge color="green">Published</Badge> : <Badge color="gray">Draft</Badge>}</Table.Td> */}
+      <Table.Td>{product.brand?.name || 'No Brand'}</Table.Td>
+      <Table.Td>{formatDate(product.createdAt)}</Table.Td>
       <Table.Td>
         <Group gap="xs">
+          <ActionIcon variant="subtle" color="green" component={Link} href={`/admin/products/${product._id}`} aria-label={`View ${product.name} details`}>
+            <IconEye size={18} />
+          </ActionIcon>
           <ActionIcon variant="subtle" color="blue" component={Link} href={`/admin/products/edit/${product._id}`} aria-label={`Edit ${product.name}`}>
             <IconPencil size={18} />
           </ActionIcon>
@@ -253,7 +408,7 @@ export default function ProductsPage() {
             variant="subtle"
             color="red"
             onClick={() => handleDeleteProduct(product._id, product.name)}
-            loading={deletingProductId === product._id} // Use loading prop
+            loading={deletingProductId === product._id}
             aria-label={`Delete ${product.name}`}
           >
             <IconTrash size={18} />
@@ -272,29 +427,41 @@ export default function ProductsPage() {
         </Button>
       </Group>
 
-      <Paper withBorder shadow="sm" radius="md" p="md" mb="xl">
-         <Group grow>
-             <TextInput
-                 placeholder="Search by name, SKU..."
-                 leftSection={<IconSearch size={16} />}
-                 value={searchTerm}
-                 onChange={handleSearchChange}
-             />
-             <Select
-                 placeholder="Filter by category"
-                 leftSection={<IconFilter size={16} />}
-                 data={[{ label: 'All Categories', value: '' }, ...categories.map(cat => ({ label: cat.name, value: cat._id }))]}
-                 value={selectedCategory}
-                 onChange={handleCategoryChange}
-                 disabled={isCategoriesLoading || isLoading} // Disable if categories or products loading
-                 clearable
-             />
-         </Group>
-      </Paper>
+      <FilterPanel
+        searchTerm={searchTerm}
+        onSearchChange={handleSearchChange}
+        searchPlaceholder="Search by name, SKU, description..."
+        
+        showCategoryFilter={true}
+        categories={categories.map(cat => ({ value: cat._id, label: cat.name }))}
+        selectedCategory={selectedCategory}
+        onCategoryChange={handleCategoryChange}
+        isCategoriesLoading={isCategoriesLoading}
+        
+        showBrandFilter={true}
+        brands={brands.map(brand => ({ value: brand._id, label: brand.name }))}
+        selectedBrand={selectedBrand}
+        onBrandChange={handleBrandChange}
+        isBrandsLoading={isBrandsLoading}
+        
+        useTwoStepAttributeFiltering={true}
+        availableAttributes={attributeDefinitions.map(attr => ({
+          id: attr._id,
+          name: attr.name,
+          values: attr.values
+        }))}
+        selectedAttributeIds={selectedAttributeIds}
+        onSelectedAttributeIdsChange={handleSelectedAttributeIdsChange}
+        twoStepAttributeValues={attributeValues}
+        onTwoStepAttributeValueChange={handleAttributeValueChange}
+        isTwoStepAttributesLoading={isAttributesLoading}
+        
+        onClearFilters={handleClearFilters}
+      />
 
-      {error && !isLoading && ( // Show error only if not loading and error exists
+      {error && !isLoading && (
          <Alert title="Error Fetching Products" color="red" icon={<IconAlertCircle />} withCloseButton onClose={() => setError(null)} mb="lg">
-             {error} Please try <Button variant="subtle" size="xs" onClick={() => fetchProducts(currentPage, debouncedSearchTerm, selectedCategory)}>reloading</Button>.
+             {error} Please try <Button variant="subtle" size="xs" onClick={() => fetchProducts(currentPage, debouncedSearchTerm, selectedCategory, selectedBrand, attributeValues)}>reloading</Button>.
          </Alert>
       )}
 
@@ -305,7 +472,7 @@ export default function ProductsPage() {
                  <Text p="xl" ta="center" c="dimmed">No products found matching your criteria.</Text>
              )}
              {!error && products.length > 0 && (
-                 <Table striped highlightOnHover verticalSpacing="sm" miw={800}>
+                 <Table striped highlightOnHover verticalSpacing="sm" miw={900}>
                      <Table.Thead>
                      <Table.Tr>
                          <Table.Th>Image</Table.Th>
@@ -314,7 +481,8 @@ export default function ProductsPage() {
                          <Table.Th>Price</Table.Th>
                          <Table.Th>Stock</Table.Th>
                          <Table.Th>Category</Table.Th>
-                         {/* <Table.Th>Status</Table.Th> */}
+                         <Table.Th>Brand</Table.Th>
+                         <Table.Th>Date Created</Table.Th>
                          <Table.Th>Actions</Table.Th>
                      </Table.Tr>
                      </Table.Thead>

@@ -11,6 +11,7 @@ export enum Permission {
   VIEW_ORDERS = "view_orders",
   MANAGE_PAYMENT_METHODS = "manage_payment_methods",
   MANAGE_CUSTOMERS = "manage_customers", // New permission
+  MANAGE_BRANDS = "manage_brands", // Brand management permission
   // Add more permissions as needed
 }
 
@@ -23,6 +24,7 @@ export const rolePermissions: Record<Role, Permission[]> = {
     Permission.VIEW_ORDERS,
     Permission.MANAGE_PAYMENT_METHODS,
     Permission.MANAGE_CUSTOMERS, // Assign to Admin
+    Permission.MANAGE_BRANDS, // Assign to Admin
   ],
   [Role.ORDER_MANAGER]: [Permission.CREATE_ORDER, Permission.VIEW_ORDERS],
 };

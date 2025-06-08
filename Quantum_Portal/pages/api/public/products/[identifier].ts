@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import connectToDatabase from '../../../../lib/dbConnect';
 import Product from '../../../../models/Product';
 import Category from '../../../../models/Category';
+import Brand from '../../../../models/Brand';
 import mongoose from 'mongoose';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -20,8 +21,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         await connectToDatabase();
         let product;
 
-        const publicFieldsToSelect = 'name description price sku images category tags customAttributes slug seoTitle seoDescription isPublished hasVariants attributeDefinitions variants stockQuantity';
+        const publicFieldsToSelect = 'name description price sku images category brand tags customAttributes slug seoTitle seoDescription isPublished hasVariants attributeDefinitions variants stockQuantity';
         const categoryPopulation = { path: 'category', select: 'name slug isPublished' };
+        const brandPopulation = { path: 'brand', select: 'name slug' };
 
 
         // Always filter by isPublished: true for public queries
@@ -30,6 +32,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (mongoose.Types.ObjectId.isValid(identifier)) {
             product = await Product.findOne({ ...baseQueryConditions, _id: identifier })
                 .populate(categoryPopulation)
+                .populate(brandPopulation)
                 .select(publicFieldsToSelect)
                 .lean();
         }
@@ -38,6 +41,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (!product) {
             product = await Product.findOne({ ...baseQueryConditions, slug: identifier })
                 .populate(categoryPopulation)
+                .populate(brandPopulation)
                 .select(publicFieldsToSelect)
                 .lean();
         }
@@ -46,6 +50,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (!product) {
             product = await Product.findOne({ ...baseQueryConditions, sku: identifier })
                 .populate(categoryPopulation)
+                .populate(brandPopulation)
                 .select(publicFieldsToSelect)
                 .lean();
         }

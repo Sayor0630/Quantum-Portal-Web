@@ -7,7 +7,9 @@ import {
     IconPalette, IconFileText, IconSettings, IconLayoutDashboard, IconAdjustments,
     IconCategory, IconReceipt, IconMessageCircle, IconUsersGroup, IconBrowser,
     IconPackage, // Re-using IconPackage for Products
-    IconLink as IconNavMenu // Alias IconLink for Navigation Menus
+    IconTag, // For Brands
+    IconLink as IconNavMenu, // Alias IconLink for Navigation Menus
+    IconBoxMultiple // For Stock Management
 } from '@tabler/icons-react';
 import React, { ReactNode } from 'react';
 import { useSession } from 'next-auth/react'; // For session and role
@@ -47,7 +49,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       icon: IconShoppingCart,
       children: [
         { label: 'Products', href: '/admin/products', icon: IconPackage },
+        { label: 'Stock Management', href: '/admin/products/stock-management', icon: IconPackage },
         { label: 'Categories', href: '/admin/categories', icon: IconCategory },
+        { label: 'Brands', href: '/admin/brands', icon: IconTag },
         { label: 'Attributes', href: '/admin/custom-attributes', icon: IconAdjustments },
       ]
     },

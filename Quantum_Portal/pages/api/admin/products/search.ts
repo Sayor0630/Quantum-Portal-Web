@@ -4,6 +4,7 @@ import { authOptions } from '../../auth/[...nextauth]';
 import connectToDatabase from '../../../../lib/dbConnect';
 import Product, { IProduct } from '../../../../models/Product';
 import Category from '../../../../models/Category';
+import Brand from '../../../../models/Brand';
 import AttributeDefinition, { IAttributeDefinition } from '../../../../models/AttributeDefinition';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -36,7 +37,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const searchLimit = Math.min(parseInt(limit as string) || 10, 20); // Max 20 results
 
     // Build search criteria for multiple fields
-    const searchCriteria = {
+    const searchCriteria: any = {
       $and: [
         { isPublished: true }, // Only search published products
         {
@@ -52,9 +53,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ]
     };
 
+    // Get brand IDs that match the search term for brand name searching
+    const matchingBrands = await Brand.find({ 
+      name: { $regex: searchTerm, $options: 'i' }, 
+      isActive: true 
+    }).select('_id').lean();
+    
+    if (matchingBrands.length > 0) {
+      const brandIds = matchingBrands.map(brand => brand._id);
+      searchCriteria.$and[1].$or.push({ brand: { $in: brandIds } });
+    }
+
     const products = await Product.find(searchCriteria)
-      .select('_id name sku price stockQuantity images customAttributes category hasVariants attributeDefinitions variants')
+      .select('_id name sku price stockQuantity images customAttributes category brand hasVariants attributeDefinitions variants')
       .populate('category', 'name slug')
+      .populate('brand', 'name slug logo')
       .sort({ name: 1 }) // Sort by name
       .limit(searchLimit)
       .lean();
@@ -120,9 +133,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         stockQuantity: totalStock,
         images: product.images || [],
         category: product.category,
+        brand: product.brand,
         displayText: product.hasVariants ? 
-          `${product.name} (${product.sku}) - $${priceRange.min.toFixed(2)}-$${priceRange.max.toFixed(2)} [${product.variants?.length || 0} variants]` :
-          `${product.name} (${product.sku}) - $${product.price}`,
+          `${product.name} (${product.sku}) - $${priceRange.min.toFixed(2)}-$${priceRange.max.toFixed(2)} [${product.variants?.length || 0} variants]${product.brand ? ` - ${(product.brand as any).name}` : ''}` :
+          `${product.name} (${product.sku}) - $${product.price}${product.brand ? ` - ${(product.brand as any).name}` : ''}`,
         customAttributes: product.customAttributes || {},
         availableAttributes: productAttributes, // Available attribute options
         hasAttributes,

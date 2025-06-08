@@ -2,7 +2,7 @@
 
 import AdminLayout from '../../../components/admin/AdminLayout';
 import { Title, Text, Paper, Table, Group, Button, ActionIcon, LoadingOverlay, Alert, Badge, ScrollArea, Space } from '@mantine/core';
-import { IconPencil, IconTrash, IconPlus, IconAlertCircle } from '@tabler/icons-react';
+import { IconPencil, IconTrash, IconPlus, IconAlertCircle, IconEye } from '@tabler/icons-react';
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -131,6 +131,15 @@ export default function CustomAttributesPage() {
       </Table.Td>
       <Table.Td>
         <Group gap="xs">
+          <ActionIcon
+             variant="subtle"
+             color="green"
+             component={Link}
+             href={`/admin/custom-attributes/${attribute._id}`}
+             aria-label={`View products using ${attribute.name}`}
+           >
+            <IconEye size={18} />
+          </ActionIcon>
           <ActionIcon
              variant="subtle"
              color="blue"

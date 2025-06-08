@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { SimpleGrid, Pagination, Group, Text, LoadingOverlay, Alert, Paper, Title, Space, Select, RangeSlider, Checkbox, Button, UnstyledButton, Collapse, Grid } from '@mantine/core';
+import { SimpleGrid, Pagination, Group, Text, LoadingOverlay, Alert, Paper, Title, Space, Select, RangeSlider, Checkbox, Button, UnstyledButton, Collapse, Grid, Stack, Badge } from '@mantine/core';
 import ProductCard from '../../../_components/ProductCard';
 import { useDebouncedValue, useDisclosure } from '@mantine/hooks';
 import { IconFilter, IconChevronDown, IconChevronUp, IconSortAscending, IconSortDescending, IconCalendarEvent, IconTag, IconCurrencyDollar, IconAlertCircle } from '@tabler/icons-react';
@@ -11,11 +11,7 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation'; // Fo
 interface Product { _id: string; name: string; price: number; images?: string[]; slug?: string; sku?: string; /* Add other fields if needed by ProductCard */ }
 interface PaginatedProductsResponse { products: Product[]; currentPage: number; totalPages: number; totalItems: number; }
 
-// Example: Available Attribute Facets (would be fetched based on category)
-interface AttributeFacetValue { label: string; value: string; count: number; }
-interface AttributeFacet { name: string; // e.g., Color
-    values: AttributeFacetValue[];
-}
+// Remove attribute definition interface as we're not using dynamic attributes
 
 const SORT_OPTIONS = [
     { value: 'createdAt_desc', label: 'Newest' },
@@ -56,18 +52,8 @@ export default function CategoryProductList({
     Number(searchParams?.get('maxPrice')) || 1000 // Default max, adjust based on product range
   ]);
   const [debouncedPriceRange] = useDebouncedValue(priceRange, 600);
-  const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string[]>>(() => {
-    const attrs: Record<string, string[]> = {};
-    searchParams?.forEach((value, key) => {
-        if (key.startsWith('attr_')) {
-            attrs[key.substring(5)] = value.split(',');
-        }
-    });
-    return attrs;
-  });
 
-  // Placeholder for dynamic attribute facets fetched from API
-  const [attributeFacets, setAttributeFacets] = useState<AttributeFacet[]>([]);
+  // Remove attribute-related state as we're not using dynamic attributes
   const [filtersOpened, { toggle: toggleFilters }] = useDisclosure(false);
 
 
@@ -79,11 +65,9 @@ export default function CategoryProductList({
     if (debouncedPriceRange[0] > 0) params.set('minPrice', String(debouncedPriceRange[0]));
     if (debouncedPriceRange[1] < 1000) params.set('maxPrice', String(debouncedPriceRange[1])); // Only if not default max
 
-    Object.entries(selectedAttributes).forEach(([key, values]) => {
-        if (values.length > 0) params.set(`customAttributes.${key}`, values.join(','));
-    });
+    // Remove attribute filtering for now
     return params.toString();
-  }, [currentPage, sortBy, debouncedPriceRange, selectedAttributes]);
+  }, [currentPage, sortBy, debouncedPriceRange]);
 
 
   const fetchProducts = useCallback(async () => {
@@ -107,29 +91,19 @@ export default function CategoryProductList({
     finally { setIsLoading(false); }
   }, [categoryId, buildQueryString, router, pathname]);
 
-  // Effect to fetch when currentPage, sortBy, debouncedPriceRange, or selectedAttributes change
+  // Effect to fetch when currentPage, sortBy, debouncedPriceRange change
   useEffect(() => {
     fetchProducts();
-  }, [fetchProducts]); // buildQueryString is memoized, so fetchProducts is stable if its deps are.
+  }, [fetchProducts]);
 
-  // Placeholder: Fetch attribute facets based on categoryId (or current product list)
-  // useEffect(() => { /* fetch facets and setAttributeFacets */ }, [categoryId]);
-
-
-  const handleAttributeFilterChange = (attributeName: string, value: string, checked: boolean) => {
-    setSelectedAttributes(prev => {
-        const currentValues = prev[attributeName] || [];
-        const newValues = checked
-            ? [...currentValues, value]
-            : currentValues.filter(v => v !== value);
-        if (newValues.length === 0) {
-            const { [attributeName]: _, ...rest } = prev; // Remove key if no values selected
-            return rest;
-        }
-        return { ...prev, [attributeName]: newValues };
-    });
-    setCurrentPage(1); // Reset page when filters change
+  const clearAllFilters = () => {
+    setPriceRange([0, 1000]);
+    setSortBy(SORT_OPTIONS[0].value);
+    setCurrentPage(1);
   };
+
+  const hasActiveFilters = priceRange[0] > 0 || priceRange[1] < 1000;
+  const activeFilterCount = (priceRange[0] > 0 || priceRange[1] < 1000 ? 1 : 0);
 
 
   return (
@@ -137,10 +111,24 @@ export default function CategoryProductList({
         <Grid.Col span={{ base: 12, lg: 3 }}> {/* Filters Sidebar */}
             <Paper p="md" withBorder radius="sm" shadow="xs">
                 <Group justify="space-between" mb="md">
-                    <Title order={4}><Group gap="xs"><IconFilter size={20}/> Filters</Group></Title>
-                    <Button variant="subtle" size="xs" onClick={toggleFilters}>
-                        {filtersOpened ? 'Hide' : 'Show'} Filters
-                    </Button>
+                    <Group gap="xs">
+                        <Title order={4}><Group gap="xs"><IconFilter size={20}/> Filters</Group></Title>
+                        {hasActiveFilters && (
+                            <Badge size="sm" variant="filled" color="blue">
+                                {activeFilterCount}
+                            </Badge>
+                        )}
+                    </Group>
+                    <Group gap="xs">
+                        {hasActiveFilters && (
+                            <Button variant="subtle" size="xs" color="red" onClick={clearAllFilters}>
+                                Clear All
+                            </Button>
+                        )}
+                        <Button variant="subtle" size="xs" onClick={toggleFilters}>
+                            {filtersOpened ? 'Hide' : 'Show'} Filters
+                        </Button>
+                    </Group>
                 </Group>
                 <Collapse in={filtersOpened}>
                     <Text size="sm" mb="xs" fw={500}>Price Range</Text>
@@ -153,14 +141,8 @@ export default function CategoryProductList({
                         mb="xl"
                         marks={PRICE_MARKS}
                     />
-                    <Text size="sm" mb="xs" fw={500}>Attributes (Example)</Text>
-                    {/* Dynamic attribute filters would be rendered here based on attributeFacets */}
-                    <Checkbox.Group label="Color (Example)" mb="md" value={selectedAttributes['Color'] || []} onChange={(values) => handleAttributeFilterChange('Color', '', false /* This needs rework for checkbox group */)}>
-                         {/* This needs to be individual checkboxes to use handleAttributeFilterChange correctly */}
-                        <Checkbox value="Red" label="Red" onChange={(e) => handleAttributeFilterChange('Color', 'Red', e.currentTarget.checked)} checked={selectedAttributes['Color']?.includes('Red')}/>
-                        <Checkbox value="Blue" label="Blue" onChange={(e) => handleAttributeFilterChange('Color', 'Blue', e.currentTarget.checked)} checked={selectedAttributes['Color']?.includes('Blue')}/>
-                    </Checkbox.Group>
-                    <Text c="dimmed" fs="italic" size="sm">More dynamic attribute filters coming soon.</Text>
+                    <Text size="sm" mb="xs" fw={500}>Additional Filters</Text>
+                    <Text size="sm" c="dimmed" fs="italic">More filters coming soon.</Text>
                 </Collapse>
             </Paper>
         </Grid.Col>

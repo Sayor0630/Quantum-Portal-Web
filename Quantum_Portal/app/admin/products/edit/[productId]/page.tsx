@@ -23,6 +23,11 @@ interface CategoryData {
   name: string;
 }
 
+interface BrandData {
+  _id: string;
+  name: string;
+}
+
 interface UploadedImageInfo {
   url: string;
   public_id: string;
@@ -54,6 +59,7 @@ interface ProductDataFromAPI { // For data fetched from API
     sku: string;
     stockQuantity: number;
     category?: { _id: string; name: string; } | string;
+    brand?: { _id: string; name: string; } | string;
     tags: string[];
     images: string[];
     seoTitle?: string;
@@ -84,6 +90,7 @@ const createValidationSchema = (hasVariants: boolean) => Yup.object().shape({
     Yup.number().integer('Stock must be an integer').min(0, 'Stock must be non-negative').optional() : 
     Yup.number().integer('Stock must be an integer').min(0, 'Stock must be non-negative').required('Stock quantity is required').typeError('Stock must be a number'),
   category: Yup.string().nullable(),
+  brand: Yup.string().required('Brand is required'),
   tags: Yup.array().of(Yup.string()).ensure(),
   images: Yup.array().of(Yup.string().url("Each image must be a valid URL")).optional(),
   seoTitle: Yup.string().optional().trim().max(70, 'SEO Title should be 70 characters or less'),
@@ -105,6 +112,7 @@ export default function EditProductPage() {
   const [isSlugManuallyModified, setIsSlugManuallyModified] = useState(false);
 
   const [categoriesList, setCategoriesList] = useState<CategoryData[]>([]);
+  const [brandsList, setBrandsList] = useState<BrandData[]>([]);
   const [attributeDefinitions, setAttributeDefinitions] = useState<AttributeDefinition[]>([]);
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -128,6 +136,7 @@ export default function EditProductPage() {
       sku: '',
       stockQuantity: 0,
       category: '',
+      brand: '',
       tags: [] as string[],
       images: [] as string[],
       seoTitle: '',
@@ -168,11 +177,19 @@ export default function EditProductPage() {
         const fetchMetaData = async () => { /* ... (metadata fetch logic remains same) ... */
             setIsMetaLoading(true);
             try {
-                const [catRes, attrRes] = await Promise.all([ fetch('/api/admin/categories'), fetch('/api/admin/attribute-definitions'),]);
+                const [catRes, brandRes, attrRes] = await Promise.all([
+                  fetch('/api/admin/categories'),
+                  fetch('/api/admin/brands'),
+                  fetch('/api/admin/attribute-definitions'),
+                ]);
                 if (!catRes.ok) throw new Error('Failed to fetch categories for form');
+                if (!brandRes.ok) throw new Error('Failed to fetch brands for form');
                 if (!attrRes.ok) throw new Error('Failed to fetch attribute definitions for form');
-                const catData = await catRes.json(); const attrData = await attrRes.json();
+                const catData = await catRes.json(); 
+                const brandData = await brandRes.json();
+                const attrData = await attrRes.json();
                 setCategoriesList(catData.map((c: any) => ({ _id: c._id, name: c.name })));
+                setBrandsList(brandData.brands ? brandData.brands.map((b: any) => ({ _id: b._id, name: b.name })) : []);
                 setAttributeDefinitions(attrData);
             } catch (err: any) { notifications.show({ title: 'Error loading form metadata', message: err.message, color: 'red' });
             } finally { setIsMetaLoading(false); }
@@ -197,6 +214,7 @@ export default function EditProductPage() {
                     sku: productData.sku || '', // Ensure SKU is a string
                     stockQuantity: productData.stockQuantity,
                     category: typeof productData.category === 'string' ? productData.category : productData.category?._id || '',
+                    brand: typeof productData.brand === 'string' ? productData.brand : productData.brand?._id || '',
                     tags: productData.tags || [],
                     images: productData.images || [],
                     seoTitle: productData.seoTitle || '',
@@ -301,6 +319,7 @@ export default function EditProductPage() {
         ...(hasVariants ? {} : { sku: values.sku }), // Only include SKU for non-variant products
         stockQuantity: productStock,
         category: values.category || null,
+        brand: values.brand,
         tags: values.tags,
         images: uploadedImages.map(img => img.url),
         seoTitle: values.seoTitle || undefined,
@@ -378,6 +397,7 @@ export default function EditProductPage() {
         <Divider my="lg" label="Categorization & Details" labelPosition="center" />
 
         <Select label="Category" placeholder="Select a category" data={categoriesList.map(cat => ({ value: cat._id, label: cat.name }))} searchable clearable disabled={isMetaLoading} {...form.getInputProps('category')} mb="md" />
+        <Select label="Brand" placeholder="Select a brand" data={brandsList.map(brand => ({ value: brand._id, label: brand.name }))} searchable clearable disabled={isMetaLoading} {...form.getInputProps('brand')} mb="md" required />
         <TagsInput label="Tags" placeholder="Enter tags" description="Press Enter or comma" clearable {...form.getInputProps('tags')} mb="md" />
 
         <Divider my="lg" label="Product Variants" labelPosition="center" />

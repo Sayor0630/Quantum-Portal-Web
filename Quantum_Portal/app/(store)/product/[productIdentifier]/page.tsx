@@ -29,6 +29,7 @@ interface Product extends BreadcrumbProductData { // Extends BreadcrumbProductDa
     _id: string;
     // name: string; // from BreadcrumbProductData
     // category?: BreadcrumbNestedCategory | null; // from BreadcrumbProductData
+    brand?: { _id: string; name: string; slug: string } | null;
     description?: string;
     price: number;
     sku?: string;
@@ -155,6 +156,11 @@ const ProductHeaderSection = ({ product }: { product: Product }) => {
   return (
     <Box mb="lg">
       <Title order={1} lineClamp={2}>{product.name}</Title>
+      {product.brand && (
+        <Text size="sm" c="dimmed" mt={4}>
+          by <Text component="span" fw={500}>{product.brand.name}</Text>
+        </Text>
+      )}
       {!product.hasVariants && product.sku && <Text size="xs" c="dimmed" mt={4}>SKU: {product.sku}</Text>}
       <Group justify="space-between" align="center" mt="md">
           <Text size="xl" fw={700} c="blue.7">{getDisplayPrice()}</Text>

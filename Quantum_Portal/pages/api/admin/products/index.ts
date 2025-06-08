@@ -4,6 +4,7 @@ import { authOptions } from '../../auth/[...nextauth]';
 import connectToDatabase from '../../../../lib/dbConnect'; // Corrected
 import Product from '../../../../models/Product';  // Corrected
 import Category from '../../../../models/Category';  // Corrected
+import Brand from '../../../../models/Brand';  // Added Brand import
 import mongoose from 'mongoose';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -20,6 +21,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const page = parseInt(req.query.page as string) || 1;
         const limit = parseInt(req.query.limit as string) || 10;
         const categoryId = req.query.categoryId as string;
+        const includeSubcategories = req.query.includeSubcategories === 'true';
+        const selectedSubcategories = req.query.selectedSubcategories as string; // Comma-separated IDs
+        const brandId = req.query.brandId as string;
         const searchQuery = req.query.search as string;
         const fields = req.query.fields as string;
 
@@ -28,20 +32,166 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           if (!mongoose.Types.ObjectId.isValid(categoryId)) {
              return res.status(400).json({ message: 'Invalid category ID format' });
           }
-          query.category = new mongoose.Types.ObjectId(categoryId);
+          
+          if (selectedSubcategories) {
+            // User has selected specific subcategories
+            const subcategoryIds = selectedSubcategories.split(',').filter(id => id.trim());
+            const validSubcategoryIds = subcategoryIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+            
+            if (validSubcategoryIds.length !== subcategoryIds.length) {
+              return res.status(400).json({ message: 'Invalid subcategory ID format in selection' });
+            }
+            
+            const allSelectedIds = [
+              new mongoose.Types.ObjectId(categoryId),
+              ...validSubcategoryIds.map(id => new mongoose.Types.ObjectId(id))
+            ];
+            query.category = { $in: allSelectedIds };
+          } else if (includeSubcategories) {
+            // Get all subcategory IDs recursively
+            const getAllSubcategoryIds = async (parentId: string): Promise<mongoose.Types.ObjectId[]> => {
+              const children = await Category.find({ parent: parentId }).select('_id').lean();
+              const childIds: mongoose.Types.ObjectId[] = children.map(child => 
+                new mongoose.Types.ObjectId(child._id.toString())
+              );
+              
+              // Recursively get subcategories of children
+              for (const childId of childIds) {
+                const grandChildren = await getAllSubcategoryIds(childId.toString());
+                childIds.push(...grandChildren);
+              }
+              
+              return childIds;
+            };
+            
+            const subcategoryIds = await getAllSubcategoryIds(categoryId);
+            const allCategoryIds = [new mongoose.Types.ObjectId(categoryId), ...subcategoryIds];
+            query.category = { $in: allCategoryIds };
+          } else {
+            query.category = new mongoose.Types.ObjectId(categoryId);
+          }
+        }
+        if (brandId) {
+          if (!mongoose.Types.ObjectId.isValid(brandId)) {
+             return res.status(400).json({ message: 'Invalid brand ID format' });
+          }
+          query.brand = new mongoose.Types.ObjectId(brandId);
         }
         if (searchQuery) {
+            // Get brand IDs that match the search term
+            const matchingBrands = await Brand.find({ 
+              name: { $regex: searchQuery, $options: 'i' }, 
+              isActive: true 
+            }).select('_id').lean();
+            const brandIds = matchingBrands.map(brand => brand._id);
+            
             query.$or = [
                 { name: { $regex: searchQuery, $options: 'i' } },
                 { sku: { $regex: searchQuery, $options: 'i' } },
+                { description: { $regex: searchQuery, $options: 'i' } },
+                ...(brandIds.length > 0 ? [{ brand: { $in: brandIds } }] : [])
             ];
+        }
+
+        // Handle attribute filtering
+        const attributeFilters: { [key: string]: any } = {};
+        const hasAttributeFilters: string[] = [];
+        
+        Object.keys(req.query).forEach(key => {
+          if (key.startsWith('attribute.')) {
+            const attributeName = key.replace('attribute.', '');
+            const values = (req.query[key] as string).split(',').map(v => v.trim()).filter(v => v);
+            if (values.length > 0) {
+              attributeFilters[attributeName] = values;
+            }
+          } else if (key.startsWith('hasAttribute.')) {
+            const attributeName = key.replace('hasAttribute.', '');
+            if (req.query[key] === 'true') {
+              hasAttributeFilters.push(attributeName);
+            }
+          }
+        });
+
+        // Apply attribute filters to query
+        if (Object.keys(attributeFilters).length > 0 || hasAttributeFilters.length > 0) {
+          const attributeConditions: any[] = [];
+          
+          // Handle specific attribute value filtering
+          Object.entries(attributeFilters).forEach(([attributeName, values]) => {
+            // For products with variants, check if any variant has the required attribute values
+            const variantCondition = {
+              $and: [
+                { hasVariants: true },
+                { 
+                  variants: { 
+                    $elemMatch: { 
+                      isActive: true,
+                      [`attributeCombination.${attributeName}`]: { $in: values }
+                    } 
+                  } 
+                }
+              ]
+            };
+            
+            // For products without variants, check custom attributes
+            const customAttributeCondition = {
+              $and: [
+                { $or: [{ hasVariants: false }, { hasVariants: { $exists: false } }] },
+                { [`customAttributes.${attributeName}`]: { $in: values } }
+              ]
+            };
+            
+            attributeConditions.push({ $or: [variantCondition, customAttributeCondition] });
+          });
+          
+          // Handle attribute existence filtering
+          hasAttributeFilters.forEach(attributeName => {
+            // For products with variants, check if any variant has this attribute
+            const variantCondition = {
+              $and: [
+                { hasVariants: true },
+                { 
+                  variants: { 
+                    $elemMatch: { 
+                      isActive: true,
+                      [`attributeCombination.${attributeName}`]: { $exists: true }
+                    } 
+                  } 
+                }
+              ]
+            };
+            
+            // For products without variants, check if custom attribute exists
+            const customAttributeCondition = {
+              $and: [
+                { $or: [{ hasVariants: false }, { hasVariants: { $exists: false } }] },
+                { [`customAttributes.${attributeName}`]: { $exists: true } }
+              ]
+            };
+            
+            attributeConditions.push({ $or: [variantCondition, customAttributeCondition] });
+          });
+          
+          if (attributeConditions.length > 0) {
+            query.$and = query.$and || [];
+            query.$and.push(...attributeConditions);
+          }
         }
 
         let productQuery = Product.find(query);
         if (fields) {
             productQuery = productQuery.select(fields.split(',').join(' ')) as any;
         } else {
-            productQuery = productQuery.populate('category', 'name slug');
+            productQuery = productQuery
+                .populate('category', 'name slug parent')
+                .populate('brand', 'name slug')
+                .populate({
+                    path: 'category',
+                    populate: {
+                        path: 'parent',
+                        select: 'name slug'
+                    }
+                });
         }
 
         const products = await productQuery
@@ -67,15 +217,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     case 'POST':
       try {
         const {
-            name, description, price, sku, stockQuantity, category,
+            name, description, price, sku, stockQuantity, category, brand,
             tags, customAttributes, images,
             seoTitle, seoDescription,
             slug, isPublished, // Added slug and isPublished
             hasVariants, attributeDefinitions, variants // New variant fields
         } = req.body;
 
-        if (!name || !description) {
-          return res.status(400).json({ message: 'Missing required fields: name, description' });
+        if (!name || !description || !brand) {
+          return res.status(400).json({ message: 'Missing required fields: name, description, brand' });
         }
 
         // Validate required fields based on whether product has variants
@@ -97,6 +247,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           if (!categoryExists) {
             return res.status(404).json({ message: 'Category not found' });
           }
+        }
+
+        // Validate brand (required)
+        if (!mongoose.Types.ObjectId.isValid(brand)) {
+           return res.status(400).json({ message: 'Invalid brand ID format for product brand' });
+        }
+        const brandExists = await Brand.findById(brand);
+        if (!brandExists) {
+          return res.status(404).json({ message: 'Brand not found' });
         }
 
         // Handle price and stock for variant products
@@ -129,6 +288,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           sku: finalSku || '',
           stockQuantity: finalStock,
           category: category ? new mongoose.Types.ObjectId(category) : undefined,
+          brand: new mongoose.Types.ObjectId(brand),
           tags: tags || [],
           images: images || [],
           seoTitle: seoTitle || undefined,

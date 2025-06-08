@@ -1,14 +1,14 @@
 'use client';
 
 import AdminLayout from '../../../components/admin/AdminLayout';
-import { Title, Text, Paper, Table, Group, Button, ActionIcon, LoadingOverlay, Alert, ScrollArea, Pagination, TextInput, Select, Badge, Space, Grid, Menu } from '@mantine/core';
+import { Title, Text, Paper, Table, Group, Button, ActionIcon, LoadingOverlay, Alert, ScrollArea, Pagination, TextInput, Select, Badge, Space, Grid, Menu, Loader } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { IconEye, IconAlertCircle, IconSearch, IconFilter, IconCalendarEvent, IconPlus, IconDotsVertical, IconEdit, IconReceipt, IconCircleCheck, IconCircleX, IconTruckDelivery } from '@tabler/icons-react';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { notifications } from '@mantine/notifications';
 import { Role, Permission, hasPermission } from '../../../lib/permissions';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useDebouncedValue } from '@mantine/hooks';
 import dayjs from 'dayjs';
@@ -34,6 +34,7 @@ interface OrderCustomer {
 
 interface Order {
   _id: string;
+  orderNumber?: string; // Order number from MongoDB
   customer?: OrderCustomer | string; // API might send populated customer or just ID
   orderItems: OrderItem[];
   totalAmount: number;
@@ -89,6 +90,7 @@ const VALID_ORDER_STATUSES_FOR_DROPDOWN = [
 export default function OrdersPage() {
   const { data: session, status: authStatus } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const userRole = (session?.user as any)?.role as Role | undefined;
 
   const [orders, setOrders] = useState<Order[]>([]);
@@ -103,29 +105,30 @@ export default function OrdersPage() {
   const [debouncedSearchTerm] = useDebouncedValue(searchTerm, 500);
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string | null>(null); // Renamed for clarity
   const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([null, null]);
+  const [customerIdFilter, setCustomerIdFilter] = useState<string | null>(null);
+  const hasInitialized = useRef(false);
 
-
-  const fetchOrders = useCallback(async (page: number, search: string, statusFilter: string | null, dates: [Date | null, Date | null]) => {
-    setIsLoading(true); // Overall loading for table
+  const fetchOrders = useCallback(async (page: number, search: string, statusFilter: string | null, dates: [Date | null, Date | null], customerId: string | null = null) => {
+    setIsLoading(true);
     setError(null);
     try {
       const queryParams = new URLSearchParams({
         page: String(page),
-        limit: '10', // Consider making limit configurable
+        limit: '10',
       });
       if (search) queryParams.append('search', search);
       if (statusFilter) queryParams.append('status', statusFilter);
       if (dates[0]) queryParams.append('dateFrom', dayjs(dates[0]).format('YYYY-MM-DD'));
       if (dates[1]) queryParams.append('dateTo', dayjs(dates[1]).format('YYYY-MM-DD'));
+      if (customerId) queryParams.append('customerId', customerId);
 
-      // The API endpoint /api/admin/orders should return paymentStatus for each order
       const response = await fetch(`/api/admin/orders?${queryParams.toString()}`);
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
       }
       const data: PaginatedOrdersResponse = await response.json();
-      setOrders(data.orders);
+      setOrders(data.orders || []); // Ensure we always set an array
       setCurrentPage(data.currentPage);
       setTotalPages(data.totalPages);
     } catch (err: any) {
@@ -136,18 +139,29 @@ export default function OrdersPage() {
     }
   }, []);
 
-
+  // Initialize customer filter from URL params and fetch orders
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
       router.replace('/admin/login');
+      return;
     }
-    if (authStatus === 'authenticated' && userRole) { // Ensure userRole is available
-        // Check if user has permission to view orders
-        if (hasPermission(userRole, Permission.VIEW_ORDERS)) {
-          fetchOrders(currentPage, debouncedSearchTerm, selectedStatusFilter, dateRange);
-        }
+
+    if (authStatus === 'authenticated' && userRole) {
+      // Initialize customer filter from URL params on first load
+      if (!hasInitialized.current && searchParams) {
+        const customerIdParam = searchParams.get('customerId') || null;
+        setCustomerIdFilter(customerIdParam);
+        setCurrentPage(1); // Reset to page 1 when applying customer filter
+        hasInitialized.current = true;
+        
+        // Fetch orders immediately with the customer filter
+        fetchOrders(1, '', null, [null, null], customerIdParam);
+      } else if (hasInitialized.current) {
+        // Fetch orders with current filter state for subsequent calls
+        fetchOrders(currentPage, debouncedSearchTerm, selectedStatusFilter, dateRange, customerIdFilter);
+      }
     }
-  }, [authStatus, router, userRole, currentPage, debouncedSearchTerm, selectedStatusFilter, dateRange, fetchOrders]);
+  }, [authStatus, router, userRole, searchParams, currentPage, debouncedSearchTerm, selectedStatusFilter, dateRange, customerIdFilter, fetchOrders]);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -168,6 +182,15 @@ export default function OrdersPage() {
     setCurrentPage(1);
   };
 
+  const handleClearCustomerFilter = () => {
+    setCustomerIdFilter(null);
+    setCurrentPage(1);
+    // Update URL to remove customerId parameter
+    const url = new URL(window.location.href);
+    url.searchParams.delete('customerId');
+    window.history.replaceState({}, '', url.toString());
+  };
+
 
 
   const handleChangePaymentStatus = async (orderId: string, newPaymentStatus: 'paid' | 'unpaid') => {
@@ -183,7 +206,7 @@ export default function OrdersPage() {
         throw new Error(result.message || 'Failed to update payment status');
       }
       notifications.show({ title: 'Success', message: `Order payment status updated to ${newPaymentStatus}.`, color: 'green' });
-      fetchOrders(currentPage, debouncedSearchTerm, selectedStatusFilter, dateRange); // Refresh data
+      fetchOrders(currentPage, debouncedSearchTerm, selectedStatusFilter, dateRange, customerIdFilter); // Refresh data
     } catch (err: any) {
       notifications.show({ title: 'Error', message: err.message, color: 'red' });
     } finally {
@@ -204,7 +227,7 @@ export default function OrdersPage() {
         throw new Error(result.message || 'Failed to update order status');
       }
       notifications.show({ title: 'Success', message: `Order status updated to ${newOrderStatus}.`, color: 'green' });
-      fetchOrders(currentPage, debouncedSearchTerm, selectedStatusFilter, dateRange); // Refresh data
+      fetchOrders(currentPage, debouncedSearchTerm, selectedStatusFilter, dateRange, customerIdFilter); // Refresh data
     } catch (err: any) {
       notifications.show({ title: 'Error', message: err.message, color: 'red' });
     } finally {
@@ -221,7 +244,7 @@ export default function OrdersPage() {
   }
   // Ensure user has permission to be on this page at all (applies to whole page)
   // This could be a more general "access admin" permission or specific "view orders"
-  const canViewPage = userRole && hasPermission(userRole, Permission.VIEW_ORDERS);
+  const canViewPage = userRole && hasPermission(userRole, Permission.CREATE_ORDER); // Example: Using CREATE_ORDER as a proxy for now
 
   if (!canViewPage && authStatus === 'authenticated') {
     return (
@@ -240,7 +263,7 @@ export default function OrdersPage() {
         <Table.Tr key={order._id}>
         <Table.Td>
            <Link href={`/admin/orders/${order._id}`} passHref legacyBehavior>
-               <Text component="a" c="blue.6" fw={500} size="sm">{order._id.substring(0, 8)}...</Text>
+               <Text component="a" c="blue.6" fw={500} size="sm">#{order.orderNumber || order._id.substring(0, 8) + '...'}</Text>
            </Link>
         </Table.Td>
         <Table.Td>{customerName}</Table.Td>
@@ -268,12 +291,7 @@ export default function OrdersPage() {
                     <Menu.Item leftSection={<IconEye size={14} />} component={Link} href={`/admin/orders/${order._id}`}>
                         View Details
                     </Menu.Item>
-                    <Menu.Item 
-                        leftSection={<IconEdit size={14} />} 
-                        component={Link} 
-                        href={`/admin/orders/${order._id}/edit`}
-                        disabled={!userRole || !hasPermission(userRole, Permission.CREATE_ORDER)}
-                    >
+                    <Menu.Item leftSection={<IconEdit size={14} />} component={Link} href={`/admin/orders/${order._id}/edit`}> {/* TODO: Enable when edit page exists */}
                         Edit Order
                     </Menu.Item>
                     <Menu.Divider />
@@ -316,22 +334,39 @@ export default function OrdersPage() {
     <AdminLayout>
       <Group justify="space-between" mb="xl">
         <Title order={2}>Orders</Title>
-        {userRole && hasPermission(userRole, Permission.CREATE_ORDER) && (
+        {userRole && hasPermission(userRole, Permission.CREATE_ORDER) && ( // Assuming CREATE_ORDER allows adding new ones
           <Button leftSection={<IconPlus size={16} />} component={Link} href="/admin/orders/new">
             Add New Order
           </Button>
         )}
       </Group>
 
+      {customerIdFilter && (
+        <Alert color="blue" mb="md" title="Filtered by Customer">
+          <Group justify="space-between" align="center">
+            <Text size="sm">
+              Showing orders for a specific customer (ID: {customerIdFilter})
+            </Text>
+            <Button 
+              variant="light" 
+              size="xs" 
+              onClick={handleClearCustomerFilter}
+            >
+              Clear Filter
+            </Button>
+          </Group>
+        </Alert>
+      )}
+
       <Paper withBorder shadow="sm" radius="md" p="md" mb="xl">
          <Grid grow gutter="md">
             <Grid.Col span={{ base: 12, md: 6, lg:4 }}>
                 <TextInput
-                    placeholder="Search Order ID, Customer..."
+                    placeholder="Search Order Number, Customer..."
                     leftSection={<IconSearch size={16} />}
+                    rightSection={isLoading ? <Loader size={16} /> : null}
                     value={searchTerm}
                     onChange={handleSearchChange}
-                    disabled={isLoading}
                 />
             </Grid.Col>
             <Grid.Col span={{ base: 12, md: 6, lg:3 }}>
@@ -353,7 +388,6 @@ export default function OrdersPage() {
                     clearable
                     maxDate={dateRange[1] || undefined}
                     popoverProps={{ withinPortal: true }}
-                    disabled={isLoading}
                 />
             </Grid.Col>
             <Grid.Col span={{ base: 12, md: 6, lg:2.5 }}>
@@ -365,7 +399,6 @@ export default function OrdersPage() {
                     clearable
                     minDate={dateRange[0] || undefined}
                     popoverProps={{ withinPortal: true }}
-                    disabled={isLoading}
                 />
             </Grid.Col>
          </Grid>
@@ -373,15 +406,23 @@ export default function OrdersPage() {
 
       {error && !isLoading && ( // Show error only if not loading
          <Alert title="Error Fetching Orders" color="red" icon={<IconAlertCircle />} withCloseButton onClose={() => setError(null)} mb="lg">
-             {error} Please try <Button variant="subtle" size="xs" onClick={() => fetchOrders(currentPage, debouncedSearchTerm, selectedStatusFilter, dateRange)}>reloading</Button>.
+             {error} Please try <Button variant="subtle" size="xs" onClick={() => fetchOrders(currentPage, debouncedSearchTerm, selectedStatusFilter, dateRange, customerIdFilter)}>reloading</Button>.
          </Alert>
       )}
 
-      <Paper withBorder shadow="sm" radius="md">
+      <Paper withBorder shadow="sm" radius="md" style={{ position: 'relative' }}>
          <ScrollArea>
-             <LoadingOverlay visible={isLoading && authStatus === 'authenticated'} overlayProps={{ radius: 'sm', blur: 1 }} />
+             <LoadingOverlay 
+                visible={isLoading && authStatus === 'authenticated'} 
+                overlayProps={{ radius: 'sm', blur: 0.5, backgroundOpacity: 0.3 }} 
+                loaderProps={{ size: 'md' }}
+             />
              {!isLoading && !error && orders.length === 0 && (
-                 <Text p="xl" ta="center" c="dimmed">No orders found matching your criteria.</Text>
+                 <Text p="xl" ta="center" c="dimmed">
+                   {debouncedSearchTerm || selectedStatusFilter || customerIdFilter || dateRange[0] || dateRange[1] 
+                     ? "No orders found matching your search criteria." 
+                     : "No orders found."}
+                 </Text>
              )}
              {!error && orders.length > 0 && (
                  <Table striped highlightOnHover verticalSpacing="md" miw={900}> {/* Increased verticalSpacing */}
@@ -391,8 +432,8 @@ export default function OrdersPage() {
                          <Table.Th>Customer</Table.Th>
                          <Table.Th>Date</Table.Th>
                          <Table.Th>Total</Table.Th>
-                         <Table.Th>Payment Status</Table.Th>
-                         <Table.Th>Order Status</Table.Th>
+                         <Table.Th>Payment</Table.Th>
+                         <Table.Th>Status</Table.Th>
                          <Table.Th>Items</Table.Th>
                          <Table.Th>Actions</Table.Th>
                      </Table.Tr>

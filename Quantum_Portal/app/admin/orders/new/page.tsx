@@ -8,6 +8,7 @@ import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import { useDebouncedCallback } from '@mantine/hooks';
 import { IconAlertCircle, IconSearch, IconUserCheck, IconPlus, IconTrash, IconShoppingCart, IconPackage, IconClock, IconCheck, IconAlertTriangle } from '@tabler/icons-react';
+import BrandDisplay from '../../../../components/common/BrandDisplay';
 
 interface PaymentMethodOption {
   value: string;
@@ -54,6 +55,12 @@ interface SearchProductData {
     stockQuantity: number;
     images: string[];
     category: { _id: string; name: string; slug: string } | null;
+    brand: { 
+        _id: string; 
+        name: string; 
+        slug: string;
+        logo?: string;
+    } | null;
     displayText: string;
     customAttributes: { [key: string]: string };
     availableAttributes: { [key: string]: string[] };
@@ -85,6 +92,13 @@ interface OrderItem {
     // Variant-specific fields
     variantId?: string;
     isVariantProduct: boolean;
+    // Brand information
+    brand?: { 
+        _id: string; 
+        name: string; 
+        slug: string;
+        logo?: string;
+    } | null;
 }
 
 
@@ -459,7 +473,8 @@ export default function CreateOrderPage() {
         selectedAttributes,
         subtotal: finalPrice * quantity,
         isVariantProduct: product.hasVariants,
-        variantId
+        variantId,
+        brand: product.brand // Include brand information
       };
       setOrderItems([...orderItems, newItem]);
       notifications.show({
@@ -622,7 +637,8 @@ export default function CreateOrderPage() {
         image: item.image,
         selectedAttributes: item.selectedAttributes,
         isVariantProduct: item.isVariantProduct,
-        variantId: item.variantId
+        variantId: item.variantId,
+        brand: item.brand // Include brand information
       })),
       
       status: 'pending', // Default status
@@ -906,7 +922,7 @@ export default function CreateOrderPage() {
               {orderItems.map((item, index) => (
                 <Paper key={`${item.productId}-${JSON.stringify(item.selectedAttributes)}`} withBorder p="sm" radius="sm">
                   <Grid align="center">
-                    <Grid.Col span={{ base: 12, sm: 2 }}>
+                    <Grid.Col span={{ base: 12, sm: 1.5 }}>
                       {item.image ? (
                         <Image
                           src={item.image}
@@ -928,16 +944,29 @@ export default function CreateOrderPage() {
                       )}
                     </Grid.Col>
                     
-                    <Grid.Col span={{ base: 12, sm: 4 }}>
+                    <Grid.Col span={{ base: 12, sm: 3 }}>
+                      {item.brand && (
+                        <Box mb={4}>
+                          <BrandDisplay 
+                            brand={item.brand} 
+                            size="xs" 
+                            showName={true} 
+                            compact={true} 
+                          />
+                        </Box>
+                      )}
                       <Text fw={500} size="sm">{item.name}</Text>
                       <Text size="xs" c="dimmed">SKU: {item.sku}</Text>
+                    </Grid.Col>
+
+                    <Grid.Col span={{ base: 12, sm: 2.5 }}>
                       {item.isVariantProduct && item.variantId && (
-                        <Badge size="xs" variant="light" color="blue" mt={2}>
+                        <Badge size="xs" variant="light" color="blue" mb={2}>
                           Variant Product
                         </Badge>
                       )}
                       {Object.keys(item.selectedAttributes).length > 0 && (
-                        <Group gap={4} mt={2}>
+                        <Group gap={4}>
                           {Object.entries(item.selectedAttributes).map(([key, value]) => (
                             <Badge key={key} size="xs" variant="outline">
                               {key}: {value}
@@ -945,13 +974,16 @@ export default function CreateOrderPage() {
                           ))}
                         </Group>
                       )}
+                      {Object.keys(item.selectedAttributes).length === 0 && !item.isVariantProduct && (
+                        <Text size="xs" c="dimmed">No attributes</Text>
+                      )}
                     </Grid.Col>
 
-                    <Grid.Col span={{ base: 6, sm: 2 }}>
+                    <Grid.Col span={{ base: 6, sm: 1.5 }}>
                       <Text size="sm" fw={500}>${item.price.toFixed(2)}</Text>
                     </Grid.Col>
 
-                    <Grid.Col span={{ base: 4, sm: 2 }}>
+                    <Grid.Col span={{ base: 4, sm: 1.5 }}>
                       <NumberInput
                         value={item.quantity}
                         onChange={(value) => updateItemQuantity(index, Number(value) || 1)}
@@ -1033,7 +1065,7 @@ export default function CreateOrderPage() {
                 fit="cover"
                 fallbackSrc="/placeholder-image.png"
               />
-              <div>
+              <div style={{ flex: 1 }}>
                 <Text fw={600}>{selectedProductForAttributes.name}</Text>
                 <Text size="sm" c="dimmed">
                   SKU: {selectedProductForAttributes.hasVariants && variantSku ? variantSku : selectedProductForAttributes.sku}
@@ -1050,6 +1082,16 @@ export default function CreateOrderPage() {
                   <Text size="sm" c="blue">${selectedProductForAttributes.price.toFixed(2)}</Text>
                 )}
               </div>
+              {selectedProductForAttributes.brand && (
+                <div>
+                  <BrandDisplay 
+                    brand={selectedProductForAttributes.brand} 
+                    size="sm" 
+                    showName={true}
+                    compact={true}
+                  />
+                </div>
+              )}
             </Group>
 
             <Divider />
