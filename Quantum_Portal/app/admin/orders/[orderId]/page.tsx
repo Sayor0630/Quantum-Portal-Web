@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { notifications } from '@mantine/notifications';
 import dayjs from 'dayjs';
 import BrandDisplay from '../../../../components/common/BrandDisplay';
+import LiveStockValidation from '../../../../components/admin/LiveStockValidation';
 
 // Interfaces
 interface ProductImage { // Assuming Product model has images structured like this if populated
@@ -68,6 +69,27 @@ interface PaymentDetails { // Example structure
     transactionId?: string;
     // add other relevant payment fields
 }
+interface StockValidationItem {
+    productId: string;
+    variantId?: string;
+    name: string;
+    availableQuantity: number;
+    requestedQuantity: number;
+    actualQuantity?: number; // quantity we can fulfill (for available items)
+    shortfall?: number; // how much we're short (for partially available and unavailable items)
+}
+
+interface StockValidation {
+    isValidated: boolean;
+    validationDate?: string;
+    validationResult: 'all_available' | 'partial_available' | 'none_available';
+    availableItems?: StockValidationItem[];
+    partiallyAvailableItems?: StockValidationItem[];
+    unavailableItems?: StockValidationItem[];
+    stockDeducted?: boolean;
+    stockDeductedAt?: string;
+}
+
 interface Order {
     _id: string;
     orderNumber?: string; // MongoDB auto-generated order number
@@ -81,6 +103,8 @@ interface Order {
     billingAddress?: Address;
     paymentDetails?: PaymentDetails; // Keep for now, though paymentStatus is primary
     deliveryNote?: string; // Added
+    stockValidation?: StockValidation; // Added stock validation info
+    statusReason?: string; // Added status reason
     createdAt: string;
     updatedAt: string;
 }
@@ -431,6 +455,15 @@ export default function OrderDetailsPage() {
                 </Paper>
             )}
 
+            {/* Live Stock Validation Display */}
+            <LiveStockValidation 
+                orderItems={order.orderItems}
+                savedStockValidation={order.stockValidation}
+                statusReason={order.statusReason}
+                orderStatus={order.status}
+                orderId={order._id}
+            />
+
             {/* Removed old paymentDetails block, will rely on new payment status controls */}
          </Grid.Col>
 
@@ -462,6 +495,41 @@ export default function OrderDetailsPage() {
                </Group>
                <Text size="sm" c="dimmed">Placed on: {dayjs(order.createdAt).format('MMM D, YYYY h:mm A')}</Text>
              </Paper>
+
+             {/* Stock Status Alert for On-Hold or Failed Orders */}
+             {(order.status === 'on-hold' || order.status === 'failed') && order.stockValidation?.isValidated && (
+                 <Alert 
+                     color={order.status === 'failed' ? 'red' : 'orange'} 
+                     mb="lg" 
+                     icon={<IconAlertCircle />}
+                     title={order.status === 'failed' ? 'Order Failed - Stock Issues' : 'Order On Hold - Stock Issues'}
+                 >
+                     {order.statusReason && (
+                         <Text mb="xs">{order.statusReason}</Text>
+                     )}
+                     {order.stockValidation.validationResult === 'none_available' && (
+                         <Text>All items in this order are currently out of stock. Please edit the order or contact the customer.</Text>
+                     )}
+                     {order.stockValidation.validationResult === 'partial_available' && (
+                         <Text>Some items in this order are unavailable or only partially available. Please review the stock validation details below and edit the order accordingly.</Text>
+                     )}
+                     <Group mt="md">
+                         <Button 
+                             component={Link} 
+                             href={`/admin/orders/${orderId}/edit`} 
+                             size="xs" 
+                             variant="outline"
+                         >
+                             Edit Order
+                         </Button>
+                         {(order.stockValidation.unavailableItems?.length || 0) + (order.stockValidation.partiallyAvailableItems?.length || 0) > 0 && (
+                             <Text size="xs" c="dimmed">
+                                 {(order.stockValidation.unavailableItems?.length || 0) + (order.stockValidation.partiallyAvailableItems?.length || 0)} item(s) need attention
+                             </Text>
+                         )}
+                     </Group>
+                 </Alert>
+             )}
 
              <Paper withBorder p="md" radius="md" mb="lg">
 

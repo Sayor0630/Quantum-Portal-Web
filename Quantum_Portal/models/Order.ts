@@ -78,6 +78,37 @@ export interface IOrder extends Document {
     update_time: string;
     email_address: string;
   };
+  // Stock validation fields
+  stockValidation?: {
+    isValidated: boolean;
+    validationDate?: Date;
+    validationResult: 'all_available' | 'partial_available' | 'none_available';
+    availableItems?: Array<{
+      productId: string;
+      variantId?: string;
+      name: string;
+      availableQuantity: number;
+      requestedQuantity: number;
+    }>;
+    partiallyAvailableItems?: Array<{
+      productId: string;
+      variantId?: string;
+      name: string;
+      availableQuantity: number;
+      requestedQuantity: number;
+      shortfall: number;
+    }>;
+    unavailableItems?: Array<{
+      productId: string;
+      variantId?: string;
+      name: string;
+      availableQuantity: number;
+      requestedQuantity: number;
+    }>;
+    stockDeducted?: boolean;
+    stockDeductedAt?: Date;
+  };
+  statusReason?: string; // Detailed reason for failed/on-hold status
   shippingPrice?: number;
   taxPrice?: number; // If you calculate taxes
   isPaid?: boolean; // Maintained for now, might be deprecated in favor of paymentStatus
@@ -142,6 +173,40 @@ const OrderSchema: Schema<IOrder> = new Schema(
       update_time: String,
       email_address: String,
     },
+    // Stock validation fields
+    stockValidation: {
+      isValidated: { type: Boolean, default: false },
+      validationDate: { type: Date },
+      validationResult: {
+        type: String,
+        enum: ['all_available', 'partial_available', 'none_available']
+      },
+      availableItems: [{
+        productId: { type: String, required: true },
+        variantId: { type: String },
+        name: { type: String, required: true },
+        availableQuantity: { type: Number, required: true },
+        requestedQuantity: { type: Number, required: true }
+      }],
+      partiallyAvailableItems: [{
+        productId: { type: String, required: true },
+        variantId: { type: String },
+        name: { type: String, required: true },
+        availableQuantity: { type: Number, required: true },
+        requestedQuantity: { type: Number, required: true },
+        shortfall: { type: Number, required: true }
+      }],
+      unavailableItems: [{
+        productId: { type: String, required: true },
+        variantId: { type: String },
+        name: { type: String, required: true },
+        availableQuantity: { type: Number, required: true },
+        requestedQuantity: { type: Number, required: true }
+      }],
+      stockDeducted: { type: Boolean, default: false },
+      stockDeductedAt: { type: Date }
+    },
+    statusReason: { type: String, trim: true },
     shippingPrice: { type: Number, default: 0 },
     taxPrice: { type: Number, default: 0 },
     isPaid: { type: Boolean, default: false },

@@ -8,6 +8,13 @@ import Product from '../../../../models/Product'; // For populating product deta
 import mongoose from 'mongoose';
 
 import { hasPermission, Role, Permission } from '../../../../lib/permissions'; // Import for permission check
+import { 
+  validateOrderStock, 
+  restoreStock,
+  deductStock, 
+  generateStockValidationMessage,
+  StockValidationItem 
+} from '../../../../lib/stockValidation';
 
 // Define allowed order statuses for validation (align with Order model)
 const VALID_ORDER_STATUSES = [
@@ -46,14 +53,126 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           .populate({
              path: 'orderItems.product',
              model: Product,
-             select: 'name sku price images category tags'
+             select: 'name sku price images category tags variants'
           }).lean(); // Use lean for GET requests for performance
 
         if (!order) {
           return res.status(404).json({ success: false, message: 'Order not found' });
         }
-        // The API now implicitly returns all fields, including new ones, due to .lean() and no select()
-        return res.status(200).json({ success: true, data: order });
+
+        // Cast to any to handle lean document type issues
+        const orderData = order as any;
+
+        // Enhance historical stock validation data with variant SKUs
+        if (orderData.stockValidation && Array.isArray(orderData.stockValidation)) {
+          // Collect all unique variant IDs that need SKU enhancement
+          const variantIdsToEnhance = new Set<string>();
+          
+          orderData.stockValidation.forEach((validation: any) => {
+            if (validation.items && Array.isArray(validation.items)) {
+              validation.items.forEach((item: any) => {
+                if (item.variantId && !item.variantSku) {
+                  variantIdsToEnhance.add(item.variantId);
+                }
+              });
+            }
+          });
+
+          // If there are variant IDs to enhance, fetch all products with those variants in one query
+          if (variantIdsToEnhance.size > 0) {
+            const variantIdArray = Array.from(variantIdsToEnhance);
+            const variantObjectIds = variantIdArray.map(id => new mongoose.Types.ObjectId(id));
+            
+            const productsWithVariants = await Product.find({
+              'variants._id': { $in: variantObjectIds }
+            }).select('variants').lean();
+
+            // Create a lookup map for variant ID to SKU
+            const variantSkuMap = new Map<string, string>();
+            productsWithVariants.forEach((product: any) => {
+              if (product.variants) {
+                product.variants.forEach((variant: any) => {
+                  if (variant._id && variant.sku) {
+                    variantSkuMap.set(variant._id.toString(), variant.sku);
+                  }
+                });
+              }
+            });
+
+            // Enhance all validation items with SKUs
+            orderData.stockValidation = orderData.stockValidation.map((validation: any) => {
+              if (validation.items && Array.isArray(validation.items)) {
+                const enhancedItems = validation.items.map((item: any) => {
+                  if (item.variantId && !item.variantSku && variantSkuMap.has(item.variantId)) {
+                    return { ...item, variantSku: variantSkuMap.get(item.variantId) };
+                  }
+                  return item;
+                });
+                return { ...validation, items: enhancedItems };
+              }
+              return validation;
+            });
+          }
+        }
+
+        // Handle single stockValidation object (legacy format)
+        if (orderData.stockValidation && !Array.isArray(orderData.stockValidation)) {
+          const validation = orderData.stockValidation;
+          const allItems = [
+            ...(validation.availableItems || []),
+            ...(validation.partiallyAvailableItems || []),
+            ...(validation.unavailableItems || [])
+          ];
+
+          // Collect variant IDs that need enhancement
+          const variantIdsToEnhance = new Set<string>();
+          allItems.forEach((item: any) => {
+            if (item.variantId && !item.variantSku) {
+              variantIdsToEnhance.add(item.variantId);
+            }
+          });
+
+          if (variantIdsToEnhance.size > 0) {
+            const variantIdArray = Array.from(variantIdsToEnhance);
+            const variantObjectIds = variantIdArray.map(id => new mongoose.Types.ObjectId(id));
+            
+            const productsWithVariants = await Product.find({
+              'variants._id': { $in: variantObjectIds }
+            }).select('variants').lean();
+
+            // Create a lookup map for variant ID to SKU
+            const variantSkuMap = new Map<string, string>();
+            productsWithVariants.forEach((product: any) => {
+              if (product.variants) {
+                product.variants.forEach((variant: any) => {
+                  if (variant._id && variant.sku) {
+                    variantSkuMap.set(variant._id.toString(), variant.sku);
+                  }
+                });
+              }
+            });
+
+            // Enhance items with SKUs
+            const enhanceItems = (items: any[]) => {
+              return items.map((item: any) => {
+                if (item.variantId && !item.variantSku && variantSkuMap.has(item.variantId)) {
+                  return { ...item, variantSku: variantSkuMap.get(item.variantId) };
+                }
+                return item;
+              });
+            };
+
+            orderData.stockValidation = {
+              ...validation,
+              availableItems: enhanceItems(validation.availableItems || []),
+              partiallyAvailableItems: enhanceItems(validation.partiallyAvailableItems || []),
+              unavailableItems: enhanceItems(validation.unavailableItems || [])
+            };
+          }
+        }
+
+        // The API now returns enhanced stock validation data
+        return res.status(200).json({ success: true, data: orderData });
       } catch (error) {
         console.error('Error fetching order:', error);
         return res.status(500).json({ success: false, message: 'Error fetching order', error: (error as Error).message });
@@ -65,17 +184,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           shippingAddress,
           deliveryNote,
           paymentMethod,
-          paymentStatus,
-          status, // Overall order status
+          paymentStatus, // Optional: defaults to 'unpaid' if not provided
+          status, // Optional: defaults to 'pending' if not provided, then updated based on stock validation
           orderItems,
           // customerId should not be changed here.
           // totalAmount should be recalculated.
         } = req.body;
 
         // --- Basic Validation for existence of key parts ---
-        if (!shippingAddress || !paymentMethod || !paymentStatus || !status || !orderItems) {
-          return res.status(400).json({ success: false, message: 'Missing required fields for update. Ensure shippingAddress, paymentMethod, paymentStatus, status, and orderItems are provided.' });
+        if (!shippingAddress || !paymentMethod || !orderItems) {
+          return res.status(400).json({ success: false, message: 'Missing required fields for update. Ensure shippingAddress, paymentMethod, and orderItems are provided.' });
         }
+
+        // Set default values for paymentStatus and status if not provided
+        const finalPaymentStatus = paymentStatus || 'unpaid';
+        const initialStatus = status || 'pending';
 
         // --- Detailed Validation for shippingAddress ---
         if (!shippingAddress.fullName || !shippingAddress.phone || !shippingAddress.street || !shippingAddress.city || !shippingAddress.district || !shippingAddress.postalCode || !shippingAddress.country) {
@@ -92,10 +215,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 
         // --- Validate paymentStatus and status enums ---
-        if (!VALID_PAYMENT_STATUSES.includes(paymentStatus)) {
+        if (!VALID_PAYMENT_STATUSES.includes(finalPaymentStatus)) {
             return res.status(400).json({ success: false, message: `Invalid paymentStatus. Must be one of: ${VALID_PAYMENT_STATUSES.join(', ')}` });
         }
-        if (!VALID_ORDER_STATUSES.includes(status)) {
+        if (!VALID_ORDER_STATUSES.includes(initialStatus)) {
             return res.status(400).json({ success: false, message: `Invalid order status. Must be one of: ${VALID_ORDER_STATUSES.join(', ')}` });
         }
 
@@ -118,6 +241,64 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           return res.status(404).json({ success: false, message: 'Order not found for update' });
         }
 
+        // Store original order items and status for stock restoration if needed
+        const originalOrderItems = [...orderToUpdate.orderItems];
+        const originalStatus = orderToUpdate.status;
+
+        // --- Restore stock from original order items if order was in processing/completed/delivered status ---
+        if (['processing', 'completed', 'delivered'].includes(originalStatus)) {
+          try {
+            const originalStockItems: StockValidationItem[] = originalOrderItems.map(item => ({
+              productId: item.product.toString(),
+              quantity: item.quantity,
+              name: item.name,
+              requestedQuantity: item.quantity,
+              price: item.price,
+              isVariantProduct: item.isVariantProduct || false,
+              variantId: item.variantId,
+              selectedAttributes: item.selectedAttributes
+            }));
+            await restoreStock(originalStockItems);
+          } catch (error) {
+            console.error('Error restoring stock from original order:', error);
+            return res.status(500).json({ 
+              success: false, 
+              message: 'Failed to restore stock from original order items',
+              error: (error as Error).message 
+            });
+          }
+        }
+
+        // --- Prepare new order items for stock validation ---
+        const stockValidationItems: StockValidationItem[] = orderItems.map(item => ({
+          productId: item.productId,
+          name: item.name,
+          requestedQuantity: item.quantity,
+          price: item.price,
+          selectedAttributes: item.selectedAttributes,
+          variantId: item.variantId
+        }));
+
+        // --- Perform comprehensive stock validation ---
+        const stockValidation = await validateOrderStock(stockValidationItems);
+        
+        // --- Determine order status based on stock validation ---
+        let finalStatus = initialStatus;
+        let statusReason = '';
+        
+        if (initialStatus === 'pending' || initialStatus === 'processing') {
+          if (stockValidation.validationResult === 'all_available') {
+            finalStatus = 'processing';
+            statusReason = 'All items are in stock';
+          } else if (stockValidation.validationResult === 'partial_available') {
+            finalStatus = 'on-hold';
+            statusReason = generateStockValidationMessage(stockValidation);
+          } else {
+            finalStatus = 'failed';
+            statusReason = 'All items are out of stock';
+          }
+        }
+
         // --- Update Order Fields ---
         orderToUpdate.shippingAddress = {
             fullName: shippingAddress.fullName,
@@ -134,9 +315,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         orderToUpdate.paymentMethod = paymentMethod;
 
         // Handle paymentStatus side-effects
-        if (orderToUpdate.paymentStatus !== paymentStatus) {
-            orderToUpdate.paymentStatus = paymentStatus;
-            if (paymentStatus === 'paid') {
+        if (orderToUpdate.paymentStatus !== finalPaymentStatus) {
+            orderToUpdate.paymentStatus = finalPaymentStatus;
+            if (finalPaymentStatus === 'paid') {
                 orderToUpdate.isPaid = true;
                 orderToUpdate.paidAt = new Date();
             } else {
@@ -145,17 +326,45 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             }
         }
 
+        // Set the final status and stock validation results
+        orderToUpdate.status = finalStatus;
+        orderToUpdate.statusReason = statusReason;
+        
+        // Update stock validation using dot notation to match schema structure
+        orderToUpdate.set('stockValidation.isValidated', true);
+        orderToUpdate.set('stockValidation.validationDate', new Date());
+        orderToUpdate.set('stockValidation.validationResult', stockValidation.validationResult);
+        orderToUpdate.set('stockValidation.availableItems', stockValidation.availableItems.map(item => ({
+          productId: item.productId,
+          variantId: item.variantId,
+          name: item.name,
+          availableQuantity: item.availableQuantity,
+          requestedQuantity: item.requestedQuantity
+        })));
+        orderToUpdate.set('stockValidation.partiallyAvailableItems', stockValidation.partiallyAvailableItems.map(item => ({
+          productId: item.productId,
+          variantId: item.variantId,
+          name: item.name,
+          availableQuantity: item.availableQuantity,
+          requestedQuantity: item.requestedQuantity,
+          shortfall: item.shortfall
+        })));
+        orderToUpdate.set('stockValidation.unavailableItems', stockValidation.unavailableItems.map(item => ({
+          productId: item.productId,
+          variantId: item.variantId,
+          name: item.name,
+          availableQuantity: item.availableQuantity,
+          requestedQuantity: item.requestedQuantity
+        })));
+
         // Handle order status side-effects (e.g., for 'delivered')
-        if (orderToUpdate.status !== status) {
-            orderToUpdate.status = status;
-            if (status === 'delivered') {
-                orderToUpdate.isDelivered = true;
-                orderToUpdate.deliveredAt = new Date();
-            } else if (orderToUpdate.isDelivered && status !== 'delivered') {
-                // Optional: If status changes from 'delivered' to something else, clear delivery markers
-                // orderToUpdate.isDelivered = false;
-                // orderToUpdate.deliveredAt = undefined;
-            }
+        if (finalStatus === 'delivered') {
+            orderToUpdate.isDelivered = true;
+            orderToUpdate.deliveredAt = new Date();
+        } else if (orderToUpdate.isDelivered && finalStatus !== 'delivered') {
+            // Optional: If status changes from 'delivered' to something else, clear delivery markers
+            // orderToUpdate.isDelivered = false;
+            // orderToUpdate.deliveredAt = undefined;
         }
 
         // Update orderItems - replace the whole array
@@ -173,6 +382,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         orderToUpdate.totalAmount = orderToUpdate.orderItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
         // Consider if shippingPrice or taxPrice should be recalculated or are fixed.
 
+        // --- Deduct stock for processing orders ---
+        // Only attempt stock deduction if ALL items are available at once
+        if (finalStatus === 'processing') {
+          if (stockValidation.validationResult === 'all_available') {
+            try {
+              await deductStock(stockValidationItems);
+            } catch (error) {
+              console.error('Error deducting stock for updated order:', error);
+              // Restore original order items stock if deduction fails
+              if (['processing', 'completed', 'delivered'].includes(originalStatus)) {
+                try {
+                  const originalStockItems: StockValidationItem[] = originalOrderItems.map(item => ({
+                    productId: item.product.toString(),
+                    name: item.name,
+                    requestedQuantity: item.quantity,
+                    price: item.price,
+                    variantId: item.variantId,
+                    selectedAttributes: item.selectedAttributes
+                  }));
+                  await deductStock(originalStockItems);
+                } catch (restoreError) {
+                  console.error('Error restoring original stock after failed deduction:', restoreError);
+                }
+              }
+              return res.status(500).json({ 
+                success: false, 
+                message: 'Failed to deduct stock for updated order',
+                error: (error as Error).message 
+              });
+            }
+          } else {
+            // Stock validation failed - cannot proceed with processing status
+            console.warn('Skipping stock deduction: Not all items are available in sufficient quantities');
+            return res.status(400).json({
+              success: false,
+              message: 'Cannot process order: Insufficient stock for some items',
+              stockValidation: stockValidation
+            });
+          }
+        }
+
         const savedOrder = await orderToUpdate.save();
 
         // Repopulate for consistent response, similar to GET
@@ -184,7 +434,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
              select: 'name sku price images category tags'
           });
 
-        return res.status(200).json({ success: true, data: populatedOrder });
+        return res.status(200).json({ 
+          success: true, 
+          data: populatedOrder,
+          stockValidation: stockValidation,
+          message: statusReason || 'Order updated successfully'
+        });
       } catch (error) {
         console.error('Error updating order:', error);
         return res.status(500).json({ message: 'Error updating order', error: (error as Error).message });

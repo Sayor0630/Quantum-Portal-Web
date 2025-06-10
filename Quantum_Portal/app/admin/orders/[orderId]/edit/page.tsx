@@ -87,8 +87,8 @@ interface FormValues {
     country: string;
     deliveryNote?: string;
     paymentMethod: string;
-    paymentStatus: 'unpaid' | 'paid';
-    status: string; // Overall order status
+    paymentStatus: 'unpaid' | 'paid'; // Not editable in form - will be handled by backend
+    status: string; // Not editable in form - will be set to 'pending' and updated based on stock validation
     orderItems: OrderItem[];
     selectedCustomerId?: string | null; // From order.customer
 }
@@ -181,8 +181,8 @@ export default function EditOrderPage() {
       country: 'Bangladesh',
       deliveryNote: '',
       paymentMethod: '',
-      paymentStatus: 'unpaid',
-      status: 'pending',
+      paymentStatus: 'unpaid', // Keep for interface compatibility but won't be editable
+      status: 'pending', // Keep for interface compatibility but won't be editable
       orderItems: [],
       selectedCustomerId: null,
     },
@@ -684,8 +684,8 @@ export default function EditOrderPage() {
         },
         deliveryNote: values.deliveryNote,
         paymentMethod: values.paymentMethod,
-        paymentStatus: values.paymentStatus,
-        status: values.status,
+        // Remove paymentStatus and status - they will be set automatically by the backend
+        // Status will be set to 'pending' and then updated based on stock validation
         orderItems: values.orderItems.map(item => ({
             productId: item.productId, // Ensure this is just the ID string
             name: item.name, // Denormalized name
@@ -713,7 +713,40 @@ export default function EditOrderPage() {
       if (!response.ok || !result.success) { // Assuming API returns {success: boolean, ...}
         throw new Error(result.message || 'Failed to update order.');
       }
-      notifications.show({ title: 'Order Updated', message: 'Order saved successfully.', color: 'green', icon: <IconDeviceFloppy/> });
+      
+      const { data: updatedOrder, stockValidation, message } = result;
+      
+      // Handle different order statuses based on stock validation
+      if (updatedOrder.status === 'processing') {
+        notifications.show({
+          title: 'Order Updated Successfully',
+          message: message || 'Order updated and all items are in stock. Order is now processing.',
+          color: 'green',
+          icon: <IconDeviceFloppy/>
+        });
+      } else if (updatedOrder.status === 'on-hold') {
+        notifications.show({
+          title: 'Order Updated - On Hold',
+          message: message || 'Order updated but some items have limited stock. Please review the order.',
+          color: 'yellow',
+          icon: <IconDeviceFloppy/>
+        });
+      } else if (updatedOrder.status === 'failed') {
+        notifications.show({
+          title: 'Order Updated - Failed',
+          message: message || 'Order updated but items are out of stock.',
+          color: 'orange',
+          icon: <IconDeviceFloppy/>
+        });
+      } else {
+        notifications.show({
+          title: 'Order Updated',
+          message: message || 'Order saved successfully.',
+          color: 'green',
+          icon: <IconDeviceFloppy/>
+        });
+      }
+      
       router.push(`/admin/orders/${orderId}`); // Redirect to details page
     } catch (err: any) {
       setError(err.message);
@@ -825,37 +858,14 @@ export default function EditOrderPage() {
           {...form.getInputProps('deliveryNote')}
         />
 
-        <Grid>
-          <Grid.Col span={{ base: 12, md: 6 }}>
-            <Select
-              label="Payment Method"
-              placeholder="Select payment method"
-              data={paymentMethodOptions}
-              required
-              mb="md"
-              {...form.getInputProps('paymentMethod')}
-              disabled={isLoadingPaymentMethods || paymentMethodOptions.length === 0}
-            />
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, md: 6 }}>
-            <Select
-              label="Payment Status"
-              placeholder="Select payment status"
-              data={[{value: 'unpaid', label: 'Unpaid'}, {value: 'paid', label: 'Paid'}]}
-              required
-              mb="md"
-              {...form.getInputProps('paymentStatus')}
-            />
-          </Grid.Col>
-        </Grid>
-
         <Select
-          label="Order Status"
-          placeholder="Select order status"
-          data={VALID_ORDER_STATUSES_FOR_DROPDOWN}
+          label="Payment Method"
+          placeholder="Select payment method"
+          data={paymentMethodOptions}
           required
           mb="xl"
-          {...form.getInputProps('status')}
+          {...form.getInputProps('paymentMethod')}
+          disabled={isLoadingPaymentMethods || paymentMethodOptions.length === 0}
         />
 
         <Title order={4} mb="md" mt="xl">

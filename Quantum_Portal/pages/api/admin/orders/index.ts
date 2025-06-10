@@ -6,6 +6,12 @@ import Order, { IOrderItem } from '../../../../models/Order';
 import Customer from '../../../../models/Customer'; // For populating customer details
 import Product from '../../../../models/Product'; // For populating product details in order items
 import mongoose from 'mongoose';
+import { 
+  validateOrderStock, 
+  deductStock, 
+  generateStockValidationMessage,
+  StockValidationItem 
+} from '../../../../lib/stockValidation';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const session = await getServerSession(req, res, authOptions);
@@ -143,6 +149,7 @@ async function handleGetOrders(req: NextApiRequest, res: NextApiResponse) {
 
 async function handleCreateOrder(req: NextApiRequest, res: NextApiResponse) {
   try {
+    console.log('======= ORDER CREATION STARTED =======');
     console.log('DEBUG: Incoming order creation request body:', JSON.stringify(req.body, null, 2));
     
     const {
@@ -160,6 +167,10 @@ async function handleCreateOrder(req: NextApiRequest, res: NextApiResponse) {
       status = 'pending'
     } = req.body;
 
+    console.log(`DEBUG: Order items count: ${orderItems?.length || 0}`);
+    console.log(`DEBUG: Initial status from request: ${status}`);
+    console.log(`DEBUG: Customer info - ID: ${customerId}, Email: ${customerEmail}`);
+
     // Validate required fields
     if (!orderItems || !Array.isArray(orderItems) || orderItems.length === 0) {
       return res.status(400).json({ message: 'Order items are required' });
@@ -171,19 +182,26 @@ async function handleCreateOrder(req: NextApiRequest, res: NextApiResponse) {
 
     let customer;
 
+    console.log('======= CUSTOMER HANDLING =======');
     // Handle customer - either find existing or create new
     if (customerId && mongoose.Types.ObjectId.isValid(customerId)) {
+      console.log(`DEBUG: Looking for existing customer with ID: ${customerId}`);
       customer = await Customer.findById(customerId);
       if (!customer) {
+        console.log('DEBUG: ❌ Customer not found with provided ID');
         return res.status(400).json({ message: 'Customer not found' });
       }
+      console.log(`DEBUG: ✅ Found existing customer: ${customer.email}`);
     } else if (customerEmail) {
+      console.log(`DEBUG: Looking for customer by email: ${customerEmail}`);
       // Try to find customer by email first
       customer = await Customer.findOne({ email: customerEmail });
       
       if (!customer) {
+        console.log('DEBUG: Customer not found, creating new customer');
         // Create new customer
         if (!customerFirstName || !customerLastName) {
+          console.log('DEBUG: ❌ Missing required fields for new customer');
           return res.status(400).json({ message: 'Customer first name and last name are required for new customers' });
         }
 
@@ -194,16 +212,30 @@ async function handleCreateOrder(req: NextApiRequest, res: NextApiResponse) {
           phone: customerPhone || '',
         });
         await customer.save();
+        console.log(`DEBUG: ✅ Created new customer with ID: ${customer._id}`);
+      } else {
+        console.log(`DEBUG: ✅ Found existing customer by email: ${customer._id}`);
       }
     } else {
+      console.log('DEBUG: ❌ No customer ID or email provided');
       return res.status(400).json({ message: 'Customer ID or customer email is required' });
     }
 
-    // Validate and process order items
+    // Prepare items for stock validation
+    console.log('======= PRODUCT PROCESSING =======');
+    const stockValidationItems: StockValidationItem[] = [];
     const processedOrderItems: Partial<IOrderItem>[] = [];
     let totalAmount = 0;
 
+    console.log(`DEBUG: Processing ${orderItems.length} order items`);
+
+    // First pass: validate products and prepare for stock validation
     for (const item of orderItems) {
+      console.log(`DEBUG: Processing order item:`, {
+        productId: item.product,
+        quantity: item.quantity,
+        selectedAttributes: item.selectedAttributes
+      });
       if (!item.product || !mongoose.Types.ObjectId.isValid(item.product)) {
         return res.status(400).json({ message: 'Invalid product ID in order items' });
       }
@@ -212,6 +244,9 @@ async function handleCreateOrder(req: NextApiRequest, res: NextApiResponse) {
       if (!product) {
         return res.status(400).json({ message: `Product not found: ${item.product}` });
       }
+
+      // Type assertion for proper TypeScript handling
+      const typedProduct = product as any;
 
       const quantity = parseInt(item.quantity) || 1;
       if (quantity <= 0) {
@@ -229,18 +264,19 @@ async function handleCreateOrder(req: NextApiRequest, res: NextApiResponse) {
       }
 
       // Calculate price and SKU using variant-specific values if applicable
-      let price = product.price; // Default to base price
-      let sku = product.sku || ''; // Default to base SKU
-      let itemImage = product.images && product.images.length > 0 ? product.images[0] : undefined;
-      let variant: any = null; // Declare variant variable outside the if block
+      let price = typedProduct.price; // Default to base price
+      let sku = typedProduct.sku || ''; // Default to base SKU
+      let itemImage = typedProduct.images && typedProduct.images.length > 0 ? typedProduct.images[0] : undefined;
+      let variant: any = null;
+      let variantId: string | undefined;
       
-      console.log(`Processing item for product: ${product.name}`);
-      console.log(`Product hasVariants: ${product.hasVariants}`);
+      console.log(`Processing item for product: ${typedProduct.name}`);
+      console.log(`Product hasVariants: ${typedProduct.hasVariants}`);
       console.log(`Selected attributes:`, selectedAttributesObj);
       
-      if (product.hasVariants && Object.keys(selectedAttributesObj).length > 0) {
+      if (typedProduct.hasVariants && Object.keys(selectedAttributesObj).length > 0) {
         // Find the matching variant directly
-        variant = product.variants.find((v: any) => {
+        variant = typedProduct.variants.find((v: any) => {
           const variantAttrs = Object.fromEntries(v.attributeCombination);
           return Object.keys(selectedAttributesObj).every(key => variantAttrs[key] === selectedAttributesObj[key]);
         });
@@ -250,13 +286,14 @@ async function handleCreateOrder(req: NextApiRequest, res: NextApiResponse) {
         if (!variant || !variant.isActive) {
           console.error(`Variant not found or inactive for attributes:`, selectedAttributesObj);
           return res.status(400).json({ 
-            message: `Selected variant combination is not available for product: ${product.name}` 
+            message: `Selected variant combination is not available for product: ${typedProduct.name}` 
           });
         }
         
         // Use variant price if available, otherwise fall back to base price
-        price = variant.price || product.price;
-        sku = variant.sku || product.sku || '';
+        price = variant.price || typedProduct.price;
+        sku = variant.sku || typedProduct.sku || '';
+        variantId = variant._id.toString();
         
         console.log(`Variant details - Price: ${price}, SKU: ${sku}, Stock: ${variant.stockQuantity}`);
         
@@ -264,47 +301,22 @@ async function handleCreateOrder(req: NextApiRequest, res: NextApiResponse) {
         if (variant.images && variant.images.length > 0) {
           itemImage = variant.images[0].url;
         }
-        
-        // Check stock availability for the specific variant
-        if (quantity > variant.stockQuantity) {
-          return res.status(400).json({ 
-            message: `Insufficient stock for variant. Available: ${variant.stockQuantity}, Requested: ${quantity}` 
-          });
-        }
-      } else if (!product.hasVariants) {
-        // For non-variant products, check regular stock
-        if (quantity > product.stockQuantity) {
-          return res.status(400).json({ 
-            message: `Insufficient stock. Available: ${product.stockQuantity}, Requested: ${quantity}` 
-          });
-        }
       }
 
       const itemTotal = price * quantity;
       totalAmount += itemTotal;
 
-      console.log(`Final item details - Name: ${product.name}, SKU: ${sku}, Price: ${price}, Quantity: ${quantity}, Total: ${itemTotal}`);
-
-      // Prepare brand information (use from request if available, otherwise from product)
+      // Prepare brand information
       let brandInfo: any = null;
-      console.log('DEBUG: Processing brand for item:', {
-        itemBrand: item.brand,
-        productBrand: product.brand,
-        productName: product.name
-      });
-      
       if (item.brand && item.brand._id) {
-        // Use brand info from the frontend request
         brandInfo = {
           _id: new mongoose.Types.ObjectId(item.brand._id),
           name: item.brand.name,
           slug: item.brand.slug,
           logo: item.brand.logo
         };
-        console.log('DEBUG: Using brand from frontend request:', brandInfo);
-      } else if (product.brand) {
-        // Fallback to brand from product (need to populate it)
-        const populatedBrand = product.brand as any;
+      } else if (typedProduct.brand) {
+        const populatedBrand = typedProduct.brand as any;
         if (populatedBrand && populatedBrand._id) {
           brandInfo = {
             _id: populatedBrand._id,
@@ -312,28 +324,41 @@ async function handleCreateOrder(req: NextApiRequest, res: NextApiResponse) {
             slug: populatedBrand.slug,
             logo: populatedBrand.logo
           };
-          console.log('DEBUG: Using brand from populated product:', brandInfo);
         }
       }
-      
-      console.log('DEBUG: Final brandInfo before adding to order item:', brandInfo);
 
+      // Add to stock validation items
+      stockValidationItems.push({
+        productId: typedProduct._id.toString(),
+        variantId,
+        name: typedProduct.name,
+        requestedQuantity: quantity,
+        price,
+        selectedAttributes: Object.keys(selectedAttributesObj).length > 0 ? selectedAttributesObj : undefined
+      });
+
+      // Add to processed order items
       processedOrderItems.push({
-        product: product._id as mongoose.Types.ObjectId,
-        name: product.name,
+        product: typedProduct._id as mongoose.Types.ObjectId,
+        name: typedProduct.name,
         sku,
         price,
         quantity,
         image: itemImage,
         selectedAttributes,
         brand: brandInfo,
-        // Add variant product fields
-        isVariantProduct: item.isVariantProduct || product.hasVariants || false,
-        variantId: item.variantId || (variant ? variant._id : undefined)
+        isVariantProduct: item.isVariantProduct || typedProduct.hasVariants || false,
+        variantId: item.variantId || variantId
       });
     }
 
-    // Create the order
+    // Create the order with pending status - stock validation will happen server-side
+    console.log('======= ORDER CREATION =======');
+    console.log(`DEBUG: Creating order with pending status`);
+    console.log(`DEBUG: Customer ID: ${customer._id}`);
+    console.log(`DEBUG: Total amount: $${totalAmount}`);
+    console.log(`DEBUG: Order items count: ${processedOrderItems.length}`);
+    
     const newOrder = new Order({
       customer: customer._id,
       orderItems: processedOrderItems,
@@ -341,15 +366,128 @@ async function handleCreateOrder(req: NextApiRequest, res: NextApiResponse) {
       shippingAddress,
       billingAddress,
       paymentMethod: paymentMethod || 'pending',
-      status,
-      deliveryNote: notes || ''
+      status: 'pending',
+      statusReason: 'Order created, awaiting stock validation.',
+      deliveryNote: notes || '',
+      stockValidation: {
+        isValidated: false,
+        validationDate: undefined,
+        validationResult: undefined,
+        availableItems: [],
+        unavailableItems: [],
+        stockDeducted: false,
+        stockDeductedAt: undefined
+      }
     });
 
-    console.log('DEBUG: Order before saving:', JSON.stringify(newOrder.toObject(), null, 2));
+    console.log('DEBUG: Order object created with status:', newOrder.status);
     await newOrder.save();
-    console.log('DEBUG: Order after saving:', JSON.stringify(newOrder.toObject(), null, 2));
+    console.log(`DEBUG: ✅ Order saved to database with ID: ${newOrder._id}`);
+
+    // Trigger server-side stock validation asynchronously
+    console.log('======= TRIGGERING SERVER-SIDE STOCK VALIDATION =======');
+    setImmediate(async () => {
+      try {
+        console.log(`DEBUG: Starting async stock validation for order: ${newOrder._id}`);
+        
+        // Add 1-minute delay for testing purposes - allows time to modify stock during order creation
+        console.log('DEBUG: Adding 1-minute delay for testing purposes...');
+        console.log('DEBUG: This allows time to modify stock levels during order creation');
+        await new Promise(resolve => setTimeout(resolve, 60000));
+        console.log('DEBUG: Delay completed - proceeding with stock validation');
+        
+        const stockValidation = await validateOrderStock(stockValidationItems);
+        console.log('DEBUG: Stock validation result:', JSON.stringify(stockValidation, null, 2));
+        
+        let orderStatus = 'pending';
+        let statusReason = '';
+        let shouldDeductStock = false;
+
+        if (stockValidation.validationResult === 'all_available') {
+          orderStatus = 'processing';
+          shouldDeductStock = true;
+          statusReason = 'All items available in stock. Order processing.';
+          console.log(`DEBUG: ✅ All items available - Status will change to: ${orderStatus}`);
+        } else if (stockValidation.validationResult === 'partial_available') {
+          orderStatus = 'on-hold';
+          statusReason = generateStockValidationMessage(stockValidation);
+          console.log(`DEBUG: ⚠️ Partial stock available - Status will change to: ${orderStatus}`);
+        } else {
+          orderStatus = 'failed';
+          statusReason = 'Stock finished - no items available in requested quantities.';
+          console.log(`DEBUG: ❌ No items available - Status will change to: ${orderStatus}`);
+        }
+
+        // Update order with validation results
+        const orderUpdate: any = {
+          status: orderStatus,
+          statusReason,
+          'stockValidation.isValidated': true,
+          'stockValidation.validationDate': new Date(),
+          'stockValidation.validationResult': stockValidation.validationResult,
+          'stockValidation.availableItems': stockValidation.availableItems.map(item => ({
+            productId: item.productId,
+            variantId: item.variantId,
+            name: item.name,
+            availableQuantity: item.availableQuantity,
+            requestedQuantity: item.requestedQuantity
+          })),
+          'stockValidation.partiallyAvailableItems': stockValidation.partiallyAvailableItems.map(item => ({
+            productId: item.productId,
+            variantId: item.variantId,
+            name: item.name,
+            availableQuantity: item.availableQuantity,
+            requestedQuantity: item.requestedQuantity,
+            shortfall: item.shortfall
+          })),
+          'stockValidation.unavailableItems': stockValidation.unavailableItems.map(item => ({
+            productId: item.productId,
+            variantId: item.variantId,
+            name: item.name,
+            availableQuantity: item.availableQuantity,
+            requestedQuantity: item.requestedQuantity
+          }))
+        };
+
+        await Order.findByIdAndUpdate(newOrder._id, orderUpdate);
+        console.log(`DEBUG: ✅ Order updated with validation results - Status: ${orderStatus}`);
+
+        // Deduct stock if all items are available
+        if (shouldDeductStock) {
+          console.log('DEBUG: Attempting to deduct stock...');
+          const deductionResult = await deductStock(stockValidationItems);
+          
+          if (deductionResult.success) {
+            console.log('DEBUG: ✅ Stock deduction successful');
+            await Order.findByIdAndUpdate(newOrder._id, {
+              'stockValidation.stockDeducted': true,
+              'stockValidation.stockDeductedAt': new Date()
+            });
+            console.log('DEBUG: ✅ Order updated - stock marked as deducted');
+          } else {
+            console.error('DEBUG: ❌ Stock deduction failed:', deductionResult.errors);
+            await Order.findByIdAndUpdate(newOrder._id, {
+              status: 'on-hold',
+              statusReason: `Stock deduction failed: ${deductionResult.errors.join(', ')}`
+            });
+          }
+        }
+        
+        console.log(`DEBUG: ✅ Async stock validation completed for order: ${newOrder._id}`);
+      } catch (error) {
+        console.error(`DEBUG: ❌ Error in async stock validation for order ${newOrder._id}:`, error);
+        await Order.findByIdAndUpdate(newOrder._id, {
+          status: 'failed',
+          statusReason: 'Stock validation failed due to system error.'
+        });
+      }
+    });
 
     // Populate the order for response
+    console.log('======= FINAL ORDER PREPARATION =======');
+    console.log(`DEBUG: Preparing final response for order: ${newOrder._id}`);
+    console.log(`DEBUG: Order status: ${newOrder.status} (pending - stock validation will happen server-side)`);
+    
     const populatedOrder = await Order.findById(newOrder._id)
       .populate({ path: 'customer', model: Customer, select: 'firstName lastName email phone' })
       .populate({
@@ -358,9 +496,19 @@ async function handleCreateOrder(req: NextApiRequest, res: NextApiResponse) {
         select: 'name sku price images'
       });
 
+    console.log('DEBUG: ✅ Order creation completed successfully');
+    console.log('======= ORDER CREATION SUMMARY =======');
+    console.log(`Order ID: ${newOrder._id}`);
+    console.log(`Order Number: ${newOrder.orderNumber}`);
+    console.log(`Status: ${newOrder.status}`);
+    console.log(`Status Reason: ${newOrder.statusReason}`);
+    console.log(`Stock Validation: Will happen server-side asynchronously`);
+    console.log('=====================================');
+
     return res.status(201).json({
-      message: 'Order created successfully',
-      order: populatedOrder
+      message: 'Order created successfully - stock validation will happen server-side',
+      order: populatedOrder,
+      note: 'Order created with pending status. Stock validation and status updates will happen automatically server-side.'
     });
 
   } catch (error) {

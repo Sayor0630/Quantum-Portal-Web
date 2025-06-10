@@ -656,11 +656,14 @@ export default function CreateOrderPage() {
       const result = await response.json();
 
       if (response.ok) {
+        // Order created successfully with pending status
+        // Stock validation will happen server-side
         notifications.show({
-          title: 'Order Created',
-          message: 'Order has been successfully created.',
+          title: 'Order Created Successfully',
+          message: result.message || 'Order created with pending status. Stock validation will happen automatically.',
           color: 'green'
         });
+        
         router.push('/admin/orders');
       } else {
         throw new Error(result.message || 'Failed to create order');
