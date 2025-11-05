@@ -1,22 +1,67 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../../auth/[...nextauth]'; // Adjust path
-import { v2 as cloudinary } from 'cloudinary'; // Using Cloudinary v2 SDK
+import { createHash } from 'node:crypto';
 
-// Configure Cloudinary. This block will run when the API route is loaded.
-// Ensure your environment variables are set in .env.local:
-// CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
-if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
-    cloudinary.config({
-        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-        api_key: process.env.CLOUDINARY_API_KEY,
-        api_secret: process.env.CLOUDINARY_API_SECRET,
-        secure: true, // Use https
-    });
-    console.log("Cloudinary configured successfully via environment variables.");
+type CloudinaryConfig = {
+  cloudName: string;
+  apiKey: string;
+  apiSecret: string;
+};
+
+const loadCloudinaryConfig = (): CloudinaryConfig | null => {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME?.trim();
+  const apiKey = process.env.CLOUDINARY_API_KEY?.trim();
+  const apiSecret = process.env.CLOUDINARY_API_SECRET?.trim();
+
+  if (!cloudName || !apiKey || !apiSecret) {
+    return null;
+  }
+
+  return {
+    cloudName,
+    apiKey,
+    apiSecret,
+  };
+};
+
+let cachedCloudinaryConfig = loadCloudinaryConfig();
+
+if (cachedCloudinaryConfig) {
+  console.log('Cloudinary environment variables detected at module load.');
 } else {
-    console.warn('Cloudinary environment variables not fully set. Signature generation will likely fail if this persists.');
+  console.warn('Cloudinary environment variables not fully set. Signature generation will fail until they are configured.');
 }
+
+const ensureCloudinaryConfig = (): CloudinaryConfig | null => {
+  if (cachedCloudinaryConfig) {
+    return cachedCloudinaryConfig;
+  }
+
+  const config = loadCloudinaryConfig();
+  if (config) {
+    cachedCloudinaryConfig = config;
+    console.log('Cloudinary environment variables loaded at request time.');
+  }
+
+  return cachedCloudinaryConfig;
+};
+
+const signCloudinaryParams = (
+  params: Record<string, string | number | undefined>,
+  apiSecret: string,
+): string => {
+  const toSign = Object.entries(params)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([key, value]) => {
+      const normalizedValue = Array.isArray(value) ? value.join(',') : String(value);
+      return `${key}=${normalizedValue}`;
+    })
+    .sort()
+    .join('&');
+
+  return createHash('sha1').update(`${toSign}${apiSecret}`).digest('hex');
+};
 
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -36,30 +81,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).end(`Method ${req.method} Not Allowed`);
   }
 
-  // Double check Cloudinary config at runtime, in case env vars were loaded after initial config.
-  // This is mostly for serverless environments or if there are concerns about init order.
-  if (!cloudinary.config().cloud_name || !cloudinary.config().api_key || !cloudinary.config().api_secret) {
-    console.error('Cloudinary is not configured. Check server logs for environment variable issues.');
-    // Attempt to reconfigure if variables are present now but weren't at module load time
-    if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
-        cloudinary.config({
-            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-            api_key: process.env.CLOUDINARY_API_KEY,
-            api_secret: process.env.CLOUDINARY_API_SECRET,
-            secure: true,
-        });
-        console.log("Cloudinary re-configured successfully at runtime.");
-    } else {
-        return res.status(500).json({ message: 'Cloudinary service not properly configured on the server.' });
-    }
+  const cloudinaryConfig = ensureCloudinaryConfig();
+  if (!cloudinaryConfig) {
+    console.error('Cloudinary environment variables missing. Signature generation unavailable.');
+    return res.status(500).json({ message: 'Cloudinary service not properly configured on the server.' });
   }
-
 
   try {
     const timestamp = Math.round(new Date().getTime() / 1000);
 
-    const paramsToSign: Record<string, any> = {
-      timestamp: timestamp,
+    const paramsToSign: Record<string, string | number | undefined> = {
+      timestamp,
     };
 
     const folder = req.body.folder || process.env.CLOUDINARY_UPLOAD_FOLDER || 'ecommerce_platform_default';
@@ -77,17 +109,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // if (req.body.transformation) paramsToSign.transformation = req.body.transformation; // For applying transformations on upload
     // if (req.body.format) paramsToSign.format = req.body.format; // To convert format on upload
 
-
-    const signature = cloudinary.utils.api_sign_request(
-      paramsToSign,
-      process.env.CLOUDINARY_API_SECRET!
-    );
+    const signature = signCloudinaryParams(paramsToSign, cloudinaryConfig.apiSecret);
 
     return res.status(200).json({
       signature,
       timestamp,
-      api_key: process.env.CLOUDINARY_API_KEY,
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: cloudinaryConfig.apiKey,
+      cloud_name: cloudinaryConfig.cloudName,
       folder: paramsToSign.folder,
       public_id: paramsToSign.public_id, // Return if it was part of paramsToSign
       tags: paramsToSign.tags, // Return if it was part of paramsToSign
@@ -95,10 +123,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   } catch (error) {
     console.error('Error generating Cloudinary signature:', error);
-    // Check if error is due to Cloudinary config issues not caught above
-    if ((error as Error).message.toLowerCase().includes('must supply api_secret')) {
-        return res.status(500).json({ message: 'Cloudinary API secret not configured correctly on server.'});
-    }
     return res.status(500).json({ message: 'Error generating Cloudinary signature', error: (error as Error).message });
   }
 }
