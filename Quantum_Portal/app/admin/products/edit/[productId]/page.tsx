@@ -114,6 +114,7 @@ export default function EditProductPage() {
   const [categoriesList, setCategoriesList] = useState<CategoryData[]>([]);
   const [brandsList, setBrandsList] = useState<BrandData[]>([]);
   const [attributeDefinitions, setAttributeDefinitions] = useState<AttributeDefinition[]>([]);
+  const [customPagesList, setCustomPagesList] = useState<{_id: string; title: string; pageType: string; displayLabel: string}[]>([]);
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadedImages, setUploadedImages] = useState<UploadedImageInfo[]>([]);
@@ -143,6 +144,8 @@ export default function EditProductPage() {
       seoDescription: '',
       isPublished: false, // Added
       hasVariants: false,
+      customPageId: '', // Custom page template
+      customPageType: '' as 'static' | 'dynamic' | '', // Page type
     },
     validate: yupResolver(createValidationSchema(hasVariants)),
     validateInputOnChange: hasSubmitted,
@@ -177,20 +180,24 @@ export default function EditProductPage() {
         const fetchMetaData = async () => { /* ... (metadata fetch logic remains same) ... */
             setIsMetaLoading(true);
             try {
-                const [catRes, brandRes, attrRes] = await Promise.all([
+                const [catRes, brandRes, attrRes, pagesRes] = await Promise.all([
                   fetch('/api/admin/categories'),
                   fetch('/api/admin/brands'),
                   fetch('/api/admin/attribute-definitions'),
+                  fetch('/api/admin/content/static-pages'),
                 ]);
                 if (!catRes.ok) throw new Error('Failed to fetch categories for form');
                 if (!brandRes.ok) throw new Error('Failed to fetch brands for form');
                 if (!attrRes.ok) throw new Error('Failed to fetch attribute definitions for form');
+                if (!pagesRes.ok) throw new Error('Failed to fetch pages for form');
                 const catData = await catRes.json(); 
                 const brandData = await brandRes.json();
                 const attrData = await attrRes.json();
+                const pagesData = await pagesRes.json();
                 setCategoriesList(catData.map((c: any) => ({ _id: c._id, name: c.name })));
                 setBrandsList(brandData.brands ? brandData.brands.map((b: any) => ({ _id: b._id, name: b.name })) : []);
                 setAttributeDefinitions(attrData);
+                setCustomPagesList(pagesData.pages || []);
             } catch (err: any) { notifications.show({ title: 'Error loading form metadata', message: err.message, color: 'red' });
             } finally { setIsMetaLoading(false); }
         };
@@ -221,6 +228,8 @@ export default function EditProductPage() {
                     seoDescription: productData.seoDescription || '',
                     isPublished: productData.isPublished || false, // Populate isPublished
                     hasVariants: productData.hasVariants || false,
+                    customPageId: (productData as any).customPageId || '', // Custom page template
+                    customPageType: (productData as any).customPageType || '', // Page type
                 });
                 
                 // Load variant data
@@ -324,6 +333,8 @@ export default function EditProductPage() {
         images: uploadedImages.map(img => img.url),
         seoTitle: values.seoTitle || undefined,
         seoDescription: values.seoDescription || undefined,
+        customPageId: values.customPageId || null, // Custom page template
+        customPageType: values.customPageType || null, // Page type
         // New variant fields
         hasVariants,
         attributeDefinitions: hasVariants ? 
@@ -445,6 +456,25 @@ export default function EditProductPage() {
                 </MantineBox>
             ))}
         </SimpleGrid>
+
+        <Divider my="lg" label="Page Template (Optional)" labelPosition="center" />
+        <Select 
+          label="Custom Page Template" 
+          placeholder="Use default product page" 
+          data={customPagesList.map(page => ({ value: page._id, label: page.displayLabel }))} 
+          searchable 
+          clearable 
+          disabled={isMetaLoading}
+          {...form.getInputProps('customPageId')} 
+          onChange={(value) => {
+            form.setFieldValue('customPageId', value || '');
+            // Find and set the page type
+            const selectedPage = customPagesList.find(p => p._id === value);
+            form.setFieldValue('customPageType', (selectedPage?.pageType as 'static' | 'dynamic' | '') || '');
+          }}
+          description="Override the default product page template with a custom page design for this product."
+          mb="md" 
+        />
 
         <Accordion defaultValue="seo_settings" mt="lg" mb="md">
             <Accordion.Item value="seo_settings">

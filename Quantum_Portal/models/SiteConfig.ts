@@ -13,6 +13,8 @@ interface ISiteConfig extends Document {
     lightMode: IThemeColors;
     darkMode: IThemeColors;
   };
+  defaultProductPageId?: mongoose.Schema.Types.ObjectId; // Default template for all product pages
+  defaultProductPageType?: 'static' | 'dynamic'; // Type of default page
   createdAt: Date;
   updatedAt: Date;
 }
@@ -31,6 +33,8 @@ const SiteConfigSchema: Schema<ISiteConfig> = new Schema({
       accentColor: { type: String, default: '#0070f3' }, // Consider a different accent for dark mode
     },
   },
+  defaultProductPageId: { type: mongoose.Schema.Types.ObjectId, sparse: true },
+  defaultProductPageType: { type: String, enum: ['static', 'dynamic'], sparse: true },
 }, { timestamps: true }); // `timestamps: true` handles createdAt and updatedAt automatically
 
 // Ensure only one SiteConfig document exists, or use a fixed ID for querying.

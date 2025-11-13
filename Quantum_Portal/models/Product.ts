@@ -46,6 +46,11 @@ export interface IProduct extends Document {
   seoTitle?: string;
   seoDescription?: string;
   isPublished: boolean;
+  
+  // Custom Page Template
+  customPageId?: mongoose.Schema.Types.ObjectId; // Optional: Override default product page with custom template
+  customPageType?: 'static' | 'dynamic'; // Type of custom page
+  
   createdAt: Date;
   updatedAt: Date;
   
@@ -92,6 +97,10 @@ const ProductSchema: Schema<IProduct> = new Schema({
   seoTitle: { type: String, trim: true, maxlength: 70 },
   seoDescription: { type: String, trim: true, maxlength: 160 },
   isPublished: { type: Boolean, default: false, index: true },
+  
+  // Custom Page Template
+  customPageId: { type: mongoose.Schema.Types.ObjectId, sparse: true },
+  customPageType: { type: String, enum: ['static', 'dynamic'], sparse: true },
 }, { timestamps: true });
 
 ProductSchema.pre<IProduct>('save', function(next) {

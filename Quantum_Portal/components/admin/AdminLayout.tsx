@@ -11,7 +11,7 @@ import {
     IconLink as IconNavMenu, // Alias IconLink for Navigation Menus
     IconBoxMultiple // For Stock Management
 } from '@tabler/icons-react';
-import React, { ReactNode } from 'react';
+import React, { ReactNode, useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react'; // For session and role
 import { usePathname } from 'next/navigation'; // For active link state
 import Link from 'next/link'; // For NavLink component prop
@@ -35,6 +35,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   // Re-add if needed, but the provided diff did not have it, so following that.
   // For now, let's keep it for theme toggling, assuming it's a desired feature.
   const { colorScheme, setColorScheme } = useMantineColorScheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
 
   const { data: session } = useSession();
@@ -62,6 +67,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       label: 'Content',
       icon: IconFileText,
       children: [
+        { label: 'Dynamic Pages', href: '/admin/content/dynamic-pages', icon: IconLayoutDashboard },
         { label: 'Static Pages', href: '/admin/content/static-pages', icon: IconBrowser },
       ]
     },
@@ -72,13 +78,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { label: 'Homepage Builder', href: '/admin/homepage-builder', icon: IconLayoutDashboard },
         { label: 'Navigation Menus', href: '/admin/settings/navigation', icon: IconNavMenu },
         { label: 'Site Identity & Theme', href: '/admin/settings/site-identity', icon: IconPalette }, // Re-use IconPalette or new one
-        { label: 'Product Page Layout', href: '/admin/settings/product-page-layout', icon: IconSettings }, // Or layout specific icon
       ]
     },
     {
       label: 'Site Settings', // New section for site configuration
       icon: IconSettings,
       children: [
+        { label: 'Product Template', href: '/admin/settings/product-template', icon: IconLayoutDashboard },
         { label: 'Payment Methods', href: '/admin/payment-methods', icon: IconReceipt },
       ]
     },
@@ -161,7 +167,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             size="lg"
             aria-label="Toggle color scheme"
           >
-            {colorScheme === 'light' ? <IconMoonStars stroke={1.5} /> : <IconSun stroke={1.5} />}
+            {mounted ? (
+              colorScheme === 'light' ? <IconMoonStars stroke={1.5} /> : <IconSun stroke={1.5} />
+            ) : (
+              <IconMoonStars stroke={1.5} />
+            )}
           </ActionIcon>
         </Group>
       </AppShell.Header>

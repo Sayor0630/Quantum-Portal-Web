@@ -16,7 +16,7 @@ const theme = createTheme({
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <SessionProvider>
-      <MantineProvider theme={theme} defaultColorScheme="auto">
+      <MantineProvider theme={theme} defaultColorScheme="light">
         <Notifications />
         <ModalsProvider> {/* Add ModalsProvider here */}
           {children}
